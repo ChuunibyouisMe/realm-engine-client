@@ -356,7 +356,10 @@ export function register(ctx: PluginContext) {
 
     const deltaSec = (packet.data.tickTime as number ?? 200) / 1000;
     regenMethod29(state, pd, deltaSec);
-
+    if (shouldNexus(state)) {
+      if (packet) packet.send = false;
+      doNexus(client, state, `Server Side Hit`);
+    }
     // Autopot (HP + MP) is owned by the auto-drink plugin — see its HP threshold guard.
   }, { prepend: true });
 
