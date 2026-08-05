@@ -9,7 +9,7 @@ REM
 REM Env-var overrides:
 REM   WSL_DISTRO    WSL distro name            (default: Debian)
 REM   WSL_USER      WSL login user             (default: auto via wsl whoami)
-REM   WSL_PARENT    project root in WSL        (default: auto-detect ~/realmengine or ~/realm-engine)
+REM   WSL_PARENT    project root in WSL        (default: auto-detect ~/realm-engine-client, ~/realmengine or ~/realm-engine)
 REM   WIN_BASE      Windows destination dir    (default: %USERPROFILE%\Desktop\test)
 REM   CLIENT_DIR    client folder name         (default: auto)
 REM   INTERNAL_DIR  internal folder name       (default: auto)
@@ -20,8 +20,15 @@ if "!WSL_USER!"=="" (
     for /f "delims=" %%I in ('wsl -d !WSL_DISTRO! whoami 2^>nul') do set "WSL_USER=%%I"
     if "!WSL_USER!"=="" set "WSL_USER=%USERNAME%"
 )
+REM realm-engine-client (this repo) is checked FIRST — ~/realm-engine is a
+REM different project (bot pipeline) that also has a client/ folder, so it
+REM must never win the auto-detect when both trees exist.
 if "!WSL_PARENT!"=="" (
-    if exist "\\wsl.localhost\!WSL_DISTRO!\home\!WSL_USER!\realmengine\client" (
+    if exist "\\wsl.localhost\!WSL_DISTRO!\home\!WSL_USER!\realm-engine-client\client" (
+        set "WSL_PARENT=home\!WSL_USER!\realm-engine-client"
+    ) else if exist "\\wsl$\!WSL_DISTRO!\home\!WSL_USER!\realm-engine-client\client" (
+        set "WSL_PARENT=home\!WSL_USER!\realm-engine-client"
+    ) else if exist "\\wsl.localhost\!WSL_DISTRO!\home\!WSL_USER!\realmengine\client" (
         set "WSL_PARENT=home\!WSL_USER!\realmengine"
     ) else if exist "\\wsl$\!WSL_DISTRO!\home\!WSL_USER!\realmengine\client" (
         set "WSL_PARENT=home\!WSL_USER!\realmengine"
@@ -30,7 +37,7 @@ if "!WSL_PARENT!"=="" (
     ) else if exist "\\wsl$\!WSL_DISTRO!\home\!WSL_USER!\realm-engine\client" (
         set "WSL_PARENT=home\!WSL_USER!\realm-engine"
     ) else (
-        echo [sync] ERROR: Couldn't find realmengine\client or realm-engine\client under \\wsl.localhost\!WSL_DISTRO!\home\!WSL_USER!\
+        echo [sync] ERROR: Couldn't find realm-engine-client\client, realmengine\client or realm-engine\client under \\wsl.localhost\!WSL_DISTRO!\home\!WSL_USER!\
         echo [sync] - Make sure WSL is running and your dev tree is at ~/realmengine/client
         echo [sync] - Or set WSL_PARENT manually before running this script.
         pause

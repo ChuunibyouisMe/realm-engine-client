@@ -22,8 +22,13 @@ if "!WSL_USER!"=="" (
     if "!WSL_USER!"=="" set "WSL_USER=%USERNAME%"
 )
 if "!WSL_PARENT!"=="" (
-    REM Prefer canonical realm-engine layout, fall back to legacy LFG.
-    if exist "\\wsl.localhost\!WSL_DISTRO!\home\!WSL_USER!\realm-engine\client" (
+    REM Prefer realm-engine-client (this repo) — ~/realm-engine is a different
+    REM project (bot pipeline) that also has client/, then fall back to legacy LFG.
+    if exist "\\wsl.localhost\!WSL_DISTRO!\home\!WSL_USER!\realm-engine-client\client" (
+        set "WSL_PARENT=home\!WSL_USER!\realm-engine-client"
+    ) else if exist "\\wsl$\!WSL_DISTRO!\home\!WSL_USER!\realm-engine-client\client" (
+        set "WSL_PARENT=home\!WSL_USER!\realm-engine-client"
+    ) else if exist "\\wsl.localhost\!WSL_DISTRO!\home\!WSL_USER!\realm-engine\client" (
         set "WSL_PARENT=home\!WSL_USER!\realm-engine"
     ) else if exist "\\wsl$\!WSL_DISTRO!\home\!WSL_USER!\realm-engine\client" (
         set "WSL_PARENT=home\!WSL_USER!\realm-engine"
@@ -79,7 +84,7 @@ if "!WSL_BASE!"=="" (
 
 REM ── Write dev BuildSecrets.h if missing ─────────────────────────────────────
 REM   Must match client/src/bridge/InternalBridge.ts dev fallbacks.
-set "SECRETS=!WIN_BASE!\!INTERNAL_DIR!\src\ui\BuildSecrets.h"
+set "SECRETS=!WIN_BASE!\!INTERNAL_DIR!\src\core\ipc\BuildSecrets.h"
 if not exist "!SECRETS!" (
     echo [dev] BuildSecrets.h missing; writing dev defaults...
     ^> "!SECRETS!" echo #pragma once

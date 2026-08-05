@@ -26,4 +26,4 @@ ipch/
 il2cpp-d.*/
 
 # Auto-generated per-build handshake secret (build-prod.mjs) — never commit
-src/ui/BuildSecrets.h
+src/core/ipc/BuildSecrets.h
