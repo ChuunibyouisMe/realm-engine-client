@@ -63,6 +63,10 @@ namespace RuntimeOffsets {
     // Flag a specific offset variable SUSPECT from a live sanity check.
     void MarkSuspect(const uint32_t* offsetVar);
 
+    // Write a value-fingerprinted offset into the ledger + mark it resolved.
+    // Returns false if offsetVar isn't a registered entry. Used by OffsetRecovery.
+    bool CommitRecoveredOffset(uint32_t* offsetVar, uint32_t newOffset);
+
     // Live sanity checks: validate the critical offsets against plausible ranges
     // and MarkSuspect any that read CLEAR garbage (a stale offset usually reads a
     // wildly out-of-range int). The caller passes the live values it already has,
@@ -77,11 +81,21 @@ namespace RuntimeOffsets {
     // at most once; cheap to call repeatedly. Returns the number of classes freshly
     // recovered. Invoked from the BootGate Discovery state.
     int AutoResolveByStructure();
-    // The projectile instance class recovered above — the class that holds a field
-    // of type ProjectileProperties (a relationship BeeByte cannot rename away).
+    // The projectile instance class — the class holding a field of type
+    // ProjectileProperties. NOTE: that anchor is NOT rename-proof. Verified against
+    // the live 2026-07-16 metadata: BeeByte renamed `ProjectileProperties` itself, so
+    // the name lookup this scan starts from returns null and the whole scan fails.
+    // OffsetRecovery's spawn-method SIGNATURE scan is the rename-proof path and feeds
+    // the result back via AdoptProjectileClass().
     // nullptr until recovered; ProjectileTracking consults this before its
     // name-based lookup so bullets are captured again with no dump, every patch.
     Il2CppClass* GetRecoveredProjClass();
+
+    // Adopt a projectile class discovered structurally elsewhere (OffsetRecovery's
+    // spawn-method signature scan, which needs no surviving names). Publishes it as
+    // the recovered class and heals the still-name-resolvable field entries against
+    // it. Returns the number of field entries healed.
+    int AdoptProjectileClass(Il2CppClass* cls);
 
     // A4: recover renamed classes from a LIVE OBJECT (player ptr, WorldManager ptr,
     // any entity) via il2cpp_object_get_class + its parent chain — the gold-standard
@@ -337,6 +351,7 @@ namespace RuntimeOffsets {
     extern uint32_t Hbeak_ProjPropsPtr;    // FOMOIBCKIFP  fallback 0x118  (per-shot ProjectileProperties override)
     extern uint32_t Hbeak_Angle;           // FFFFKPDHEFP  fallback 0x148  (spawn angle Single)
     extern uint32_t Hbeak_InstanceDamage;  // DBNNDLKNECM  fallback 0x174  (per-instance damage Int32)
+    extern uint32_t Hbeak_SpawnAgeMs;      // GLEGBLDBOJF  fallback 0x16C  (spawn-age ms; path anchoring / expiry)
 
     // ── ProjectileProperties continued ───────────────────────────────────────
     extern uint32_t PP_CustomHitbox;       // "CustomHitbox"  fallback 0x148  (ProjectileCustomHitbox* reference)

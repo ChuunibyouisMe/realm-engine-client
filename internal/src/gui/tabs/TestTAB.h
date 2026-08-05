@@ -14,6 +14,7 @@ enum class DodgeMode : int {
     RolloutQuad = 3,  // Same engine, quadtree broad-phase (A/B against the grid version).
     ZDodge      = 4,  // Intent-preserving slide-assist dodge (zdodge).
     RePP        = 5,  // RE++ next-gen reactive dodge (repp).
+    PJDodge     = 6,  // Predictive controller + escape search (pjdodge).
 };
 
 DodgeMode GetDodgeMode();

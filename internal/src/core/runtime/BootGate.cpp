@@ -41,12 +41,12 @@ constexpr Anchor kAnchors[] = {
 constexpr int kAnchorCount = static_cast<int>(sizeof(kAnchors) / sizeof(kAnchors[0]));
 
 // Feature -> needed anchors (the gate's feature->needs view, from the ledger).
-struct FeatureNeeds { const char* feature; const char* needs[4]; int count; };
+struct FeatureNeeds { const char* feature; const char* label; const char* needs[4]; int count; };
 constexpr FeatureNeeds kFeatures[] = {
-    { "ProjectileTracking", { "HBEAKBIHANL", "KJMONHENJEN" },               2 },
-    { "AoeTracking",        { "GJJCEFJMNMK", "FHOHCELBPDO" },               2 },
-    { "AutoNexus",          { "LKHPPBEGNOM", "HBEAKBIHANL" },               2 },
-    { "SafeWalk",           { "CMFPKCJHKKB", "BGAIOPJMHLO", "KJMONHENJEN" }, 3 },
+    { "ProjectileTracking", "Bullet dodging",        { "HBEAKBIHANL", "KJMONHENJEN" },               2 },
+    { "AoeTracking",        "AoE / ground dodging",  { "GJJCEFJMNMK", "FHOHCELBPDO" },               2 },
+    { "AutoNexus",          "Auto-nexus (survival)", { "LKHPPBEGNOM", "HBEAKBIHANL" },               2 },
+    { "SafeWalk",           "Safe-walk (hazards)",   { "CMFPKCJHKKB", "BGAIOPJMHLO", "KJMONHENJEN" }, 3 },
 };
 constexpr int kFeatureCount = static_cast<int>(sizeof(kFeatures) / sizeof(kFeatures[0]));
 
@@ -57,6 +57,7 @@ bool  s_audited      = false;
 bool  s_userConsent  = false;             // EnterDiscovery() latched
 bool  s_dismissed    = false;
 bool  s_autoPatch    = false;
+bool  s_autoRecover  = true;              // auto-run recovery on a detected patch (no consent click)
 bool  s_liveAudited  = false;             // audit has incorporated live (in-world) values
 char  s_status[128]  = "Initializing\xE2\x80\xA6";
 
@@ -194,8 +195,12 @@ State Tick() {
 
     case State::UpdateDetected:
         LiveReauditIfNeeded();
-        if (s_userConsent || s_autoPatch)
-            EnterState(State::Discovery, "Discovering offsets\xE2\x80\xA6");
+        // Auto-recover: the visible Quest Board renders this state, then we enter
+        // Discovery on our own — no human "Enter Discovery" click. Uses a dedicated
+        // flag, NOT s_autoPatch, so the post-load live re-audit relapse (Ready case
+        // below) still fires and re-recovers once in-world instances are available.
+        if (s_userConsent || s_autoPatch || s_autoRecover)
+            EnterState(State::Discovery, "Recovering offsets\xE2\x80\xA6");
         else if (s_dismissed)
             EnterState(State::Ready, "Ready (degraded)");
         break;
@@ -272,6 +277,19 @@ int GetAnchorReport(AnchorView* out, int maxRows) {
         out[n].stale    = s_anchorStale[i];
     }
     return kAnchorCount;
+}
+
+int GetFeatureReport(FeatureView* out, int maxRows) {
+    int n = 0;
+    for (int i = 0; i < kFeatureCount && n < maxRows; ++i, ++n) {
+        out[n].feature = kFeatures[i].feature;
+        out[n].label   = kFeatures[i].label;
+        bool blocked = false;
+        for (int k = 0; k < kFeatures[i].count; ++k)
+            if (AnchorStale(kFeatures[i].needs[k])) { blocked = true; break; }
+        out[n].blocked = blocked;
+    }
+    return kFeatureCount;
 }
 
 } // namespace BootGate

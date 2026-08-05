@@ -7,6 +7,7 @@
 #include "Il2CppResolver.h"
 #include "DbgFileLog.h"
 #include "RePP.h"
+#include "PJDodge.h"
 #include "settings.h"
 
 #include <Windows.h>
@@ -332,6 +333,24 @@ void WriteSnapshot(const char* dir) {
             dv.hasSelectedTarget ? "true" : "false", dv.selX, dv.selY,
             dv.hasLockTarget ? "true" : "false", dv.lockX, dv.lockY,
             dv.candidateCount, dv.threatCount, dv.blockerCount, dv.tileSpeedAtPlayer);
+
+    // ── PJDodge internals ────────────────────────────────────────────────────
+    const PJDodge::DiagView pv = PJDodge::GetDiagView();
+    if (len > 0 && len < static_cast<int>(sizeof(buf)) - 600)
+        len += snprintf(buf + len, sizeof(buf) - len,
+            "  ,\"pjdodge\": { \"enabled\": %s, \"decision\": %d, \"override\": %s,\n"
+            "    \"player\": { \"x\": %.2f, \"y\": %.2f }, \"velPerSec\": { \"x\": %.2f, \"y\": %.2f },\n"
+            "    \"candidate\": %d, \"speedScale\": %.2f, \"threats\": %d, \"impactMs\": %.0f,\n"
+            "    \"projectiles\": %d, \"aoes\": %d, \"enemies\": %d,\n"
+            "    \"prediction\": { \"enabled\": %s, \"calibrated\": %d, \"clockErrMs\": %.2f,\n"
+            "      \"modelErrTiles\": %.4f, \"modelMaxTiles\": %.4f } }\n",
+            pv.enabled ? "true" : "false", pv.decision,
+            pv.overrideActive ? "true" : "false",
+            pv.playerX, pv.playerY, pv.velXPerSec, pv.velYPerSec,
+            pv.candidate, pv.speedScale, pv.threatCount, pv.earliestImpactMs,
+            pv.projectiles, pv.aoes, pv.enemies,
+            pv.predEnabled ? "true" : "false", pv.predCalibrated, pv.predClockErrMs,
+            pv.predModelErrTiles, pv.predModelMaxTiles);
 
     if (len > 0 && len < static_cast<int>(sizeof(buf)) - 8)
         len += snprintf(buf + len, sizeof(buf) - len, "}\n");

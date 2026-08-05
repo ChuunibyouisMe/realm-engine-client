@@ -9,6 +9,7 @@
 #include "FeatMagnetAim.h"
 #include "gui/tabs/WorldTAB.h"
 #include "helpers.h"
+#include "BootGate.h"
 #include "Il2CppResolver.h"
 #include "DbgFileLog.h"
 #include "BeebyteName.h"
@@ -260,7 +261,11 @@ void* __fastcall SpawnProjectileDetour(
     // afterward (and after our own LookupShooterOrigin / live-pos read / CS enter)
     // every prediction is biased late by that amount, manifesting as "bullets arrive
     // earlier than predicted" -> chip damage.
+    // GetTickCount64 is 10-16ms coarse; also grab a QueryPerformanceCounter stamp so
+    // the prediction-accuracy path has a microsecond time base (per-projectile clock
+    // calibration refines it further from the live position each tick).
     const ULONGLONG spawnTickPre = GetTickCount64();
+    const double    spawnQpcPre  = ProjectileStore::QpcNowMs();
 
     // Call game first: HBEAKBIHANL_KOBMINBDOBD returns the live projectile instance.
     // The first argument is not reliably that instance (factory/this); using it for X/Y was wrong.
@@ -301,6 +306,7 @@ void* __fastcall SpawnProjectileDetour(
     p.startY = sy;
     p.angle = angle;
     p.spawnTick = spawnTickPre;
+    p.spawnQpcMs = spawnQpcPre;
     p.valid = true;
     p.canHitPlayer = canHitPlayer;
     p.ptr = ret;
@@ -380,6 +386,21 @@ static void* g_spawnTarget = nullptr;
 void Install()
 {
     if (g_Installed) return;
+    // Feature gate: after a game patch BootGate parks in UpdateDetected until
+    // offsets are re-resolved. FeatureAllowed() is fail-closed — false unless
+    // BootGate is Ready AND every anchor the feature needs is healthy. Installing
+    // the spawn hook against a stale 'Projectile' layout makes the detour read
+    // bullet fields at shifted offsets and hard-crashes the game on load-in, so
+    // refuse to install until the gate opens. Bullet capture (and therefore
+    // auto-dodge) simply stays off on a stale/patched game instead of crashing.
+    if (!BootGate::FeatureAllowed("ProjectileTracking")) {
+        static int s_g = 0;
+        if ((s_g++ % 240) == 0)
+            DBG_FILE_LOG("[ProjectileTracking] Install gated — BootGate not Ready / "
+                "'Projectile' anchor stale; bullet capture OFF until offsets refresh "
+                "(gate-attempt=" << s_g << ")");
+        return;
+    }
     {
         static int s_n = 0;
         if ((s_n++ % 240) == 0)
@@ -506,6 +527,29 @@ void CopyActiveForDraw(std::vector<WorldProjectile>& out)
 int CountValidForDiagnostics()
 {
     return ProjectileStore::CountValidForDiagnostics();
+}
+
+void SetPredictionAccuracy(bool enabled)
+{
+    ProjectileStore::SetPredictionAccuracy(enabled);
+}
+
+bool GetPredictionAccuracy()
+{
+    return ProjectileStore::GetPredictionAccuracy();
+}
+
+PredictionDiag GetPredictionDiag()
+{
+    const ProjectileStore::PredictionDiag s = ProjectileStore::GetPredictionDiag();
+    PredictionDiag d{};
+    d.enabled       = s.enabled;
+    d.calibrated    = s.calibrated;
+    d.emaAbsTauMs   = s.emaAbsTauMs;
+    d.maxAbsTauMs   = s.maxAbsTauMs;
+    d.emaCrossTiles = s.emaCrossTiles;
+    d.maxCrossTiles = s.maxCrossTiles;
+    return d;
 }
 
 void CopyActiveLocalForDraw(std::vector<WorldProjectile>& out)

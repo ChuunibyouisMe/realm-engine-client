@@ -17,6 +17,7 @@
 #include "AutoAim.h"
 #include "RuntimeOffsets.h"
 #include "BootGate.h"
+#include "OffsetRecovery.h"
 #include "DiagBridge.h"
 #include "GameState.h"
 #include "LocalPlayer.h"
@@ -28,6 +29,7 @@
 #include "gui/tabs/CameraTAB.h"
 #include "FeatureRuntime.h"
 #include "ChatToast.h"
+#include "QuestBoard.h"
 #include "HwidCapture.h"
 #include "NoclipHook.h"
 #include "keybinds.h"
@@ -184,6 +186,7 @@ HRESULT __stdcall dPresent(IDXGISwapChain* __this, UINT SyncInterval, UINT Flags
 	AutoAim::Tick();         // entity dict walk — uses GameState::GetWorldMgr()
 	BagLooter::Tick();       // throttled bag scan + ext-goal routing
 	BootGate::Tick();        // self-healing boot/discovery loop (runs EnsureAll + audit)
+	OffsetRecovery::Tick();  // dedicated offset-recovery tool: on when degraded, off when recovered
 	DiagBridge::Tick();      // mirror live state to %LOCALAPPDATA%\RealmEngine\diag.json
 
 	static std::once_flag init_flag;
@@ -261,6 +264,7 @@ HRESULT __stdcall dPresent(IDXGISwapChain* __this, UINT SyncInterval, UINT Flags
 			ImGui::End();
 		}
 
+		QuestBoard::Render();   // offset-recovery overlay (draws only while self-heal is active)
 		ChatToast::Render();
 
 		ImGui::Render();
