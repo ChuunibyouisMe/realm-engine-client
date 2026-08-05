@@ -39,7 +39,17 @@ std::atomic<float> g_enemyAvoidanceRadius{ 2.0f };
 std::atomic<bool> g_debugOverlay{ true };
 std::atomic<bool> g_candidateOverlay{ true };
 std::mutex g_debugMutex;
-DebugSnapshot g_debug{};
+
+// Heap-backed on purpose: as a plain global, MSVC (LTCG) placed this 45 KB
+// constant-initialized blob in read-only .rdata while the identical snapshots in
+// RePP/PJDodge landed in .data, so PublishDebug's memcpy access-violated on the
+// first byte. Runtime-allocated storage cannot be const-promoted. Intentionally
+// never freed — the render thread may publish during DLL unload.
+DebugSnapshot& DebugSlot()
+{
+    static DebugSnapshot* const slot = new DebugSnapshot();
+    return *slot;
+}
 constexpr uint64_t kCommitDwellMs = 250;
 constexpr float kSharpFlipDot = -0.15f;
 bool g_haveCommittedDir = false;
@@ -124,13 +134,13 @@ Vec2 ResolveMoveTarget(Vec2 player, Vec2 target, float moveBudget, float frameMs
 void PublishDebug(const DebugSnapshot& snapshot)
 {
     std::lock_guard<std::mutex> lock(g_debugMutex);
-    g_debug = snapshot;
+    DebugSlot() = snapshot;
 }
 
 DebugSnapshot ReadDebugSnapshot()
 {
     std::lock_guard<std::mutex> lock(g_debugMutex);
-    return g_debug;
+    return DebugSlot();
 }
 
 void PublishStatus(FrameStatus status)
