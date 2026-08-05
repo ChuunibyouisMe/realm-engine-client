@@ -38,9 +38,19 @@ function findInternalDir() {
 }
 const INTERNAL_DIR = findInternalDir();
 const DLL_SLN = join(INTERNAL_DIR, 'il2cpp-dll-injection.sln');
-const DLL_OUTPUT = join(INTERNAL_DIR, 'x64', 'Release', 'version.dll');
 const DLL_DEST = join(ROOT, 'assets', 'version.dll');
-const BUILD_SECRETS_H = join(INTERNAL_DIR, 'src', 'ui', 'BuildSecrets.h');
+// The .vcxproj OutDir now writes version.dll straight into client/assets/
+// (= DLL_DEST). Older project configs emitted it under internal/x64/Release/
+// instead, so accept either — assets first (that's where a current build lands),
+// legacy path as a fallback. Only copy when the build didn't already land it.
+const DLL_BUILD_CANDIDATES = [
+  DLL_DEST,
+  join(INTERNAL_DIR, 'x64', 'Release', 'version.dll'),
+];
+// Lives next to its consumers (Handshake.cpp / IpcBridge.cpp use a quoted
+// include, so same-directory lookup always wins). The old src/ui/ home was
+// deleted in the ipc-ownership refactor.
+const BUILD_SECRETS_H = join(INTERNAL_DIR, 'src', 'core', 'ipc', 'BuildSecrets.h');
 const PACKET_DEFINITIONS_JSON = readFileSync(join(DATA_DIR, 'packet-definitions.json'), 'utf8');
 const STAT_TYPES_JSON = readFileSync(join(DATA_DIR, 'stat-types.json'), 'utf8');
 const SERVERS_JSON = readFileSync(join(DATA_DIR, 'servers.json'), 'utf8');
@@ -169,21 +179,29 @@ try {
   process.exit(1);
 }
 
-if (!existsSync(DLL_OUTPUT)) {
-  console.error(`[build-prod] ERROR: DLL not found after build: ${DLL_OUTPUT}`);
+const dllBuilt = DLL_BUILD_CANDIDATES.find((p) => existsSync(p));
+if (!dllBuilt) {
+  console.error(
+    `[build-prod] ERROR: DLL not found after build. Looked in:\n  ${DLL_BUILD_CANDIDATES.join('\n  ')}`
+  );
   process.exit(1);
 }
 
-log(`DLL built: ${fileSize(DLL_OUTPUT)}`);
+log(`DLL built: ${fileSize(dllBuilt)}`);
 
 // ── Step 4: Ship DLL (plain — open source) ───────────────────────────────────
 
 // Open source: the DLL is shipped unencrypted as assets/version.dll. The
 // runtime deploy path (index.ts) already prefers assets/version.dll, so no
-// decryption step or embedded key is needed.
+// decryption step or embedded key is needed. When the .vcxproj already emits
+// into assets/ the "copy" is a no-op (self-copy would throw), so skip it.
 mkdirSync(join(ROOT, 'assets'), { recursive: true });
-copyFileSync(DLL_OUTPUT, DLL_DEST);
-log(`DLL copied → assets/version.dll (${fileSize(DLL_DEST)})`);
+if (resolve(dllBuilt) !== resolve(DLL_DEST)) {
+  copyFileSync(dllBuilt, DLL_DEST);
+  log(`DLL copied → assets/version.dll (${fileSize(DLL_DEST)})`);
+} else {
+  log(`DLL already in assets/version.dll (${fileSize(DLL_DEST)})`);
+}
 
 // ── Step 5: Bundle core ──────────────────────────────────────────────────────
 

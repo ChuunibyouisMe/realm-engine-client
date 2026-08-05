@@ -58,4 +58,9 @@ namespace BootGate {
     struct AnchorView { const char* klass; const char* role; bool critical; bool stale; };
     int GetAnchorReport(AnchorView* out, int maxRows);
 
+    // Per-feature view for the recovery UI: which features are blocked because a
+    // critical anchor they need is stale. `blocked` = any needed anchor stale.
+    struct FeatureView { const char* feature; const char* label; bool blocked; };
+    int GetFeatureReport(FeatureView* out, int maxRows);
+
 } // namespace BootGate

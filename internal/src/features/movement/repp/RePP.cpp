@@ -43,7 +43,18 @@ Vec2     g_committedDir{};
 uint64_t g_lastCommitMs = 0;
 
 std::mutex    g_debugMutex;
-DebugSnapshot g_debug{};
+
+// Heap-backed on purpose: as a plain global, MSVC (LTCG) const-promoted the
+// identical snapshot in ZDodge into read-only .rdata, and PublishDebug's memcpy
+// access-violated on the first byte. This one happens to land in .data today, but
+// the promotion picked arbitrarily between identical globals — runtime-allocated
+// storage cannot be const-promoted, so it can't regress.
+// Intentionally never freed — the render thread may publish during DLL unload.
+DebugSnapshot& DebugSlot()
+{
+    static DebugSnapshot* const slot = new DebugSnapshot();
+    return *slot;
+}
 
 float Clamp(float value, float lo, float hi)
 {
@@ -169,7 +180,7 @@ Vec2 ResolveMoveTarget(Vec2 player, Vec2 target, float moveBudget, float frameMs
 void PublishDebug(const DebugSnapshot& snap)
 {
     std::lock_guard<std::mutex> lock(g_debugMutex);
-    g_debug = snap;
+    DebugSlot() = snap;
 }
 
 } // namespace
@@ -187,7 +198,7 @@ DiagView GetDiagView()
     DiagView v{};
     v.enabled = IsEnabled();
     std::lock_guard<std::mutex> lock(g_debugMutex);
-    const DebugSnapshot& d = g_debug;
+    const DebugSnapshot& d = DebugSlot();
     v.status            = static_cast<int>(d.status);
     v.playerX           = d.player.x;          v.playerY = d.player.y;
     v.hasSelectedTarget = d.hasSelectedTarget;
@@ -310,7 +321,7 @@ void RenderDebugOverlay(float camX, float camY, float angle, float zoom, float c
 {
     if (!IsEnabled() || !GetDebugOverlay()) return;
     DebugSnapshot snap;
-    { std::lock_guard<std::mutex> lock(g_debugMutex); snap = g_debug; }
+    { std::lock_guard<std::mutex> lock(g_debugMutex); snap = DebugSlot(); }
     Debug::Render(snap, ReadSettings(), camX, camY, angle, zoom, cx, cy);
 }
 

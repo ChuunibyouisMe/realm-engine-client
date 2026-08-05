@@ -443,9 +443,10 @@ static void TryAppendHbeakFromElem(
     // WorldManager containers (non-spawn-hook path). Without it:
     //   - elapsed = now - spawnTick ≈ 0 → projectiles never expire ("go on forever")
     //   - path anchoring fails because live position doesn't align with t=0
-    static constexpr uint32_t OFF_HBEAK_GLEGBLDBOJF = 0x16C;
+    // spawn-age (GLEGBLDBOJF) is now a registry entry (Hbeak_SpawnAgeMs) so it
+    // self-heals on an offset shift and surfaces in the audit/recovery screen.
     int32_t                   ageMs               = -1;
-    SafeRead(elem, OFF_HBEAK_GLEGBLDBOJF, ageMs);
+    SafeRead(elem, RuntimeOffsets::Hbeak_SpawnAgeMs, ageMs);
     if (ageMs >= 0 && static_cast<float>(ageMs) < wp.lifetime * 1.05f && static_cast<float>(ageMs) < 120000.f)
         wp.spawnTick = nowTick - static_cast<uint64_t>(ageMs);
 

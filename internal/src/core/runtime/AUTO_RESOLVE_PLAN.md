@@ -494,16 +494,164 @@ namespace Quest {               // Phase 3 — the Quest Board model (UI reads t
   `re-mcp/server.mjs`; 8 `re_*` tools, all validated against the running game.
 - **Current-game findings:** `HBEAKBIHANL` healthy (bullets capture). `GJJCEFJMNMK`
   AoE stale — field `GuiCanvasSwitcher` renamed (non-critical; A4 method-sig target).
+- **A1b/Phase-2 write-back — DONE (2026-07-15, compile-verified).** Extracted the
+  heal+state-flip loop from `RecoverFromInstance` into `HealFallbackEntriesAgainstClass`
+  and pointed `AutoResolveByStructure` at the structurally-recovered projectile class.
+  Recovering the class now heals its `FallbackGaveUp` field entries (name-stable ones)
+  and flips their `s_entryState` to `ResolvedMatch/Shifted` → the audit + gate see them
+  resolved. NOT yet live-verified against a patch; renamed-NAME fields still need the
+  value/param strategy below and stay stale (anchor keeps the feature gated = safe).
+- **Gate wiring — DONE (2026-07-15, compile-verified).** `FeatureAllowed()` now called at
+  `ProjectileTracking::Install()` and `AoeTracking::EnsureInstalled()` (the shared choke
+  point — sensors + WorldTAB call EnsureInstalled directly, bypassing Install). This was
+  a CRASH FIX: on the 2026-07-15 game patch the un-gated hooks installed against stale
+  offsets and hard-crashed on load-in. The plan warned "gate only AFTER write-back", but
+  the un-gated path crashes, so the gate is the safety half; write-back is what re-opens
+  it once recovery completes. Composes correctly now that both exist.
+- **Dodge-dispatch gate — DONE (2026-07-15, compile-verified). THE ACTUAL CRASH FIX.**
+  Gating only the capture hooks was INSUFFICIENT — the game still crashed on the patch.
+  Minidump analysis (hand-parsed, no cdb: `scratchpad/stackwalk.py`) showed a `0xC0000005`
+  WRITE-AV to a fixed in-DLL buffer (`version.dll+0x108AB0`) via memcpy on the render
+  thread, firing the instant a dodge mode engaged (`DodgeSwap -> 6`, crash +5s). Cause:
+  `DangerPlanner::Detour_AppEngineUpdate` runs the dodge Tick/sensors every frame reading
+  enemies/tiles (not just the gated bullets); a count read at a stale offset overruns a
+  fixed sensor array. Fix: `if (BootGate::Degraded()) return;` at the top of the dodge
+  block — no dodge work on a degraded game; re-enables when offsets heal. **LESSON: any
+  render-thread feature that fills fixed buffers from game-read counts must gate on
+  Degraded() (AutoAim etc. are candidates if they crash next).** Minidump forensics
+  workflow (parse exception + module list + poor-man's stackwalk) saved in scratchpad.
+- **M1 registry hardening — DONE (2026-07-16, compile-verified).** Audit (4-agent map) confirmed
+  the dodge/projectile/enemy pipeline is ALREADY registry-backed (pjdodge/repp/zdodge do zero raw
+  reads — they consume EnemyTracker/ProjectileStore snapshots). One genuine dodge-relevant gap
+  closed: projectile spawn-age `GLEGBLDBOJF` @0x16C registered as `Hbeak_SpawnAgeMs` + WorldTAB read
+  repointed. INTENTIONALLY not registered: speedMul (KDAJOMOFMJB) and object-id-dict-key
+  (FDNHINDAEHK) — weak/no value fingerprint, so registering would permanently gate the feature on a
+  name rename; their graceful defaults are better. Native Square fields (damageCached/cover) use the
+  RVA `square_lookup` mechanism, not the il2cpp registry.
+- **M3 recovery screen + auto-trigger — DONE (2026-07-16, compile-verified).** `QuestBoard::Render()`
+  (new src/core/runtime/QuestBoard.{h,cpp}) — centered foreground-draw-list overlay modeled on
+  ChatToast, invoked at DirectX.cpp (before ChatToast::Render, outside the menu gate). Shows caption
+  (StatusLine-derived), "Anchors ready: N/M" (GetProgress), per-anchor ✓/· rows (GetAnchorReport),
+  and the guided "let a shot fire so bullet/AoE offsets can be sampled" hint when a critical anchor
+  is still stale. Fades out ~1.8s after clean Ready. Auto-trigger: new `s_autoRecover=true` flag in
+  BootGate makes UpdateDetected auto-enter Discovery (no consent click); deliberately NOT s_autoPatch,
+  so the post-load live-reaudit relapse still re-recovers in-world.
+- **M2 (value-fingerprint resolver + projectile/AoE param-match) — NEXT, needs live game.** Framework
+  recipe (agent-mapped): parallel `s_valueFp[]` {outPtr,typeKind,lo,hi} + `HealFallbackEntriesByValue`
+  (iterate cls fields up parent chain via il2cpp_class_get_fields/get_parent, filter by
+  il2cpp_type_get_type kind, read live via ReadField<T> SEH-safe, pick unique value match) wired into
+  RecoverFromInstance after the name heal. BUT the actual residual (projectile HBEAKBIHANL + AoE
+  fields) needs a live bullet/effect instance — the spawn detour has the ground-truth params (like
+  the working AoE GjjKobDetour param-match). Chicken-and-egg: capture is gated when degraded. Clean
+  fix = install the detour on class+method resolve (rename-proof) but the detour BODY does only the
+  bounded SEH param-match self-heal while degraded, skipping the field reads that crash, then flips to
+  full processing once healed. This touches the hot path that crashed 2026-07-15 → must be validated
+  live via re_run_recovery, not shipped blind. True residual with no fingerprint: HBEAKBIHANL damage
+  (DBNNDLKNECM) — needs cross-ref to ObjectProperties Min/MaxDamage.
+- **Mode-switch gate — DONE (2026-07-16, compile-verified). A safety gate, NOT the crash fix (see
+  the `g_debug`/.rdata entry below — this only ever MASKED it).**
+  The 2026-07-15 dodge-dispatch gate (DangerPlanner) did NOT stop the crash — it recurred on
+  the 2026-07-16 re-patch, immediately on selecting a dodge mode. MAP-SYMBOLICATED the minidump
+  (couldn't guess it): built Release with `<GenerateMapFile>` (scratchpad `parsemap.py` resolves
+  the crash RVAs against `version.map`; note `GenerateMapFile` must be an item-metadata in the
+  Link ItemDefinitionGroup, the global `/p:` property does NOT reach it). Result: 0xC0000005 WRITE-AV
+  at `ZDodge::g_debug` via `ZDodge::PublishDebug+0x69` (`g_debug = snapshot` whole-struct copy),
+  reached from `TestTAB::ApplyDodgeModeWithEnter` (line 139, `ZDodge::SetEnabled(false)` on every
+  mode switch disables the other engines and ZDodge's disable publishes a debug snapshot). This is
+  the MODE-SWITCH path, orthogonal to the per-frame Tick + capture hooks I'd gated. Fix: `if
+  (BootGate::Degraded()) return;` at the top of `ApplyDodgeModeWithEnter` (the verified single
+  funnel — dashboard/IpcBridge all route through it). All three dodge entry points (per-frame
+  dispatch, capture install, mode switch) now gate on Degraded. LESSON: don't reason about a native
+  crash location — map-symbolicate the dump. CORRECTION (2026-07-16, later same day): this gate only
+  MASKED the crash. It fires on `Degraded()`, so on the very next patch — where the audit resolved
+  `HBEAKBIHANL` cleanly and reached **Ready** — the gate opened and the game crashed identically.
+  The gates are still correct fail-closed policy (don't run dodge on stale offsets), but they were
+  never the cure. Root cause + real fix: see the `ZDodge::g_debug` / `.rdata` entry below.
+- **`ZDodge::g_debug` lived in read-only `.rdata` — THE ACTUAL ROOT CAUSE (2026-07-16). FIXED.**
+  Every "dodge crash" since 2026-07-15 was this, not offsets/patches/degraded state. Proven from the
+  crashing binary itself, no map or guessing required — disassembling `PublishDebug` in the *deployed*
+  `version.dll` shows:
+  `mov r8d,0xb3c0` (45,984 = sizeof(DebugSnapshot)) / `lea rcx,[rip+…] # 0x10bab0` / `call memcpy`,
+  returning to `0x54379` — exactly the return address on the crash stack, and `rcx` = exactly the
+  dump's WRITE fault address. `0x10BAB0` is inside `.rdata` (`INITDATA|READ`, **no WRITE**) per the
+  PE section table, so the memcpy faults on byte 0, deterministically, every time it runs. That is why
+  it reproduced on a healthy game and why it always looked like "a struct copy to a valid global".
+  WHY it was misplaced: `DebugSnapshot g_debug{}` is *constant-initialized* (members have non-zero
+  defaults, e.g. 0.1f), and MSVC LTCG const-promotes provably-never-written globals into `.rdata` —
+  correctly so for `s_autoRecover`/`g_flashSpeedMulUi`/`g_aStarPerpW`/`g_autoPot*` (their writers are
+  `/OPT:REF`-eliminated, so those `.rdata` placements are SAFE, not landmines). `g_debug` is the one
+  anomaly: it has a live writer and got promoted anyway. Not source semantics — the three structurally
+  identical siblings (`RePP::g_debug`, `PJDodge::g_debug`, `PJDodge::snap`) all land correctly in
+  `.data` (seg 0003). Audited every non-const (`@…A`) data symbol in `.rdata`: `g_debug` is the ONLY
+  mutable global with a surviving write into read-only memory — one bug, not a class of them.
+  FIX: heap-back it (`DebugSlot()` returning `*new DebugSnapshot`, intentionally leaked). Runtime
+  allocation cannot be const-promoted or ICF-folded, so it is immune regardless of which of the two
+  did it. LESSON: when a write to a *valid* global faults at offset +0, check the section
+  characteristics (`.rdata` vs `.data`) before suspecting the data — and prefer reading the deployed
+  binary's own instructions over any map (`scratchpad/pesections.py`, `parsemap2.py`).
+  NOTE: `DebugSnapshot` is 45 KB and is memcpy'd on publish AND returned **by value** from
+  `ReadDebugSnapshot()` — ~90 KB of copying per publish/read cycle on the render thread. Worth
+  revisiting (return by const-ref under the lock, or double-buffer), but it is not a correctness bug.
+- **All three sibling snapshots hardened the same way (2026-07-16). PREVENTIVE.** LTCG picked
+  `ZDodge::g_debug` arbitrarily out of four identical globals, so the siblings could flip to `.rdata`
+  on any future build. Each now has its own TU-local `DebugSlot()` returning `*new DebugSnapshot`
+  (anon-namespace per engine → no linkage collision): `RePP::g_debug` (45,428 B),
+  `PJDodge::g_debug` (30,984 B) and `PJDodge::snap` (30,984 B, the `RenderDebugOverlay` function-local
+  static — also written every frame, same hazard). RePP's `snap` (RePP.cpp `RenderDebugOverlay`) is a
+  **stack** local, inherently writable, left alone. Verified in the binary: `.data` shrank 107,376 B vs
+  the 107,396 B sum of the three blobs (delta = 20 B of new slot ptrs/guards), `.rdata` did NOT grow,
+  build 0 errors. Sizes differ per engine — each has its own `DebugSnapshot` type/bounds.
+- **OffsetRecovery tool — v1 DONE (2026-07-16, compile-verified). The "out of the crashy hook, its own
+  tool" architecture the user asked for.** New `src/core/runtime/OffsetRecovery.{h,cpp}`, ticked from
+  dPresent after BootGate::Tick. Lifecycle: ON when `BootGate::Degraded() && !AllDone()`, OFF (uninstall
+  its detour) when recovered or healthy. Installs its OWN minimal MinHook detour on the projectile spawn
+  method (KOBMINBDOBD, 12 params — same target as the feature capture hook, but mutually exclusive by
+  BootGate state so never both). The detour is SAMPLE-ONLY: SEH-guarded il2cpp field scans (never reads a
+  registered/stale offset), value-fingerprints renamed fields against the ground-truth spawn args, commits
+  an offset only after `kCommitVotes=3` consecutive consistent samples (angle varies per shot → coincidences
+  die), writes back via new `RuntimeOffsets::CommitRecoveredOffset`. v1 targets = Hbeak_Angle (== param
+  `angle`) + Hbeak_ProjPropsPtr (== param `projProps`), the two strong param-matches. NEEDS LIVE VALIDATION
+  (hooks the spawn method). Watch trace for `[OffsetRecovery] sampling detour INSTALLED` then `... recovered
+  -> 0x..`. TODO to fully clear the HBEAKBIHANL anchor: add radius (cross-ref CollisionMult), spawn-age
+  (behavioural: int counting up ~frame-time), AoE origin/dest (Gjj already has a param-match detour pattern),
+  and DECOUPLE damage (DBNNDLKNECM — no fingerprint, only AutoNexus needs it) so dodging doesn't wait on it.
+  Also: wire OffsetRecovery::GetProgress into the QuestBoard so the "sampling live shots" progress shows.
+- **The `ProjectileProperties` anchor premise was FALSE — recovery never had a chance (2026-07-16).**
+  The code asserted "a relationship BeeByte's per-patch renames cannot change". Checked it against the
+  live metadata (`RotMG Exalt_Data/il2cpp_data/Metadata/global-metadata.dat`, Jul 16 11:58): the only
+  `ProjectileProperties` occurrences are a `.cs` debug path and `Namespace|Class` **string literals**
+  (a serialization table — data, which BeeByte doesn't rename, so their survival proves nothing). There
+  is no bare `ProjectileProperties` **type-name** string: the anchor class itself was renamed. Every
+  registry name (`HBEAKBIHANL`, `KOBMINBDOBD`, `GJJCEFJMNMK`, …) is likewise 0 hits. So
+  `ScanForProjectileClass` failed at `FindClassLoose` step 1, exactly as its log said.
+  THREE compounding bugs, all now fixed:
+  1. **Silent failure.** `OffsetRecovery::Install()` bailed with bare `return`s; a 184 MB trace held
+     ZERO OffsetRecovery lines. Every bail now logs a reason.
+  2. **One-shot latch at the worst moment.** `AutoResolveByStructure` set `s_structScanDone = true` on
+     ENTRY, and `s_autoRecover=true` makes BootGate run it ~90ms into boot — before a world exists, so
+     the projectile types aren't created. It failed, latched forever, and also neutered `re_run_recovery`
+     (DiagBridge). Now latches only on SUCCESS; `OffsetRecovery::Tick` retries on a 3 s throttle.
+  3. **Name-based method lookup.** Even with the class, it did
+     `il2cpp_class_get_method_from_name(cls, "KOBMINBDOBD", 12)` — a name proven gone.
+  **NEW ARCHITECTURE — resolve by SIGNATURE, not names.** `OffsetRecovery::ResolveSpawnBySignature()`
+  walks every runtime class for a method with the spawn SHAPE — 12 params
+  `(ref, ref, i4, u4, r4, i4, ref, ref, r4, r4, bool, bool)` — which a rename cannot alter without
+  changing the game's behaviour. One match hands us everything with zero names: the DECLARING class IS
+  the projectile class (fed back via `RuntimeOffsets::AdoptProjectileClass`, which then heals the
+  still-name-resolvable fields), and param[1]'s class is ProjectileProperties. >1 match ⇒ refuse and log
+  rather than guess. Must run in-process: the on-disk metadata HEADER is encrypted (sanity reads
+  `0xFEF14985`, not `0xFAB11BAF`), so this cannot be done offline — but the live runtime has already
+  decrypted it. Compile-verified; **needs a live run to confirm the scan resolves.**
 - **NEXT (for the loop):**
-  - **A1b/Phase 2** — resolve `Hbeak_InstanceDamage` by live value-range
-    `[MinDamage,MaxDamage]`; **write the recovered class/offsets back into
-    `s_entries`** so the audit + Quest Board flip GREEN (today they stay stale
-    because EnsureAll's name pass still can't resolve the renamed name).
-  - **A2** — Quest Board / discovery UI reading the `BootGate`/`Quest` API.
+  - **Live-verify the write-back** — launch the patched game + `re_run_recovery`; confirm
+    the `HBEAKBIHANL` anchor flips GREEN and ProjectileTracking re-installs (dodge returns)
+    OR see which fields stay stale (renamed names → need value/param recovery).
+  - **A1c/A3 value strategy** — resolve renamed-NAME fields (e.g. `Hbeak_InstanceDamage`)
+    by live value-range `[MinDamage,MaxDamage]` — the remaining un-healed set.
+  - **A2 (chosen: visible recovery screen)** — Quest Board / discovery overlay reading the
+    `BootGate`/`Quest` API + auto-enter Discovery on `UpdateDetected` (drive the screen,
+    no manual consent click). This is milestone "M3".
   - **A4** — AoE/throwable (`GJJCEFJMNMK`/`FHOHCELBPDO`) via method-signature; RVA table.
-  - **Gate wiring** — only AFTER Phase-2 write-back: add `FeatureAllowed()` checks at
-    the `Install()` sites. Doing it before would block ProjectileTracking even though
-    A1 already fixed it (the audit still reads stale until write-back).
 - Build verification (no game needed): `bash /tmp/re_build.sh > /tmp/re_build.log 2>&1`
   then check `MSBUILD_EXITCODE=0` and no `error C`/`error LNK`. Borrowed generated
   headers live in `internal/src/game/generated/` (gitignored) — keep them for builds.

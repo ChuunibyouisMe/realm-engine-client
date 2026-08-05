@@ -8,8 +8,9 @@ import { sendDllFeature } from '../src/bridge/DllFeatureBus.js';
 // simulation; the two RE-Sim modes differ only in broad-phase backend
 // (grid vs quadtree) so they can be A/B-compared. zDodge is an
 // intent-preserving slide-assist dodge. RePP (RE++) is the next-gen
-// reactive dodge.
-const DODGE_VALUES = ['off', 'xdodge', 'rollout-grid', 'rollout-quad', 'zdodge', 're-plus-plus'] as const;
+// reactive dodge. PJDodge is the predictive controller (exact segment CCD,
+// survival-first candidate selection, intent ladder, escape search).
+const DODGE_VALUES = ['off', 'xdodge', 'rollout-grid', 'rollout-quad', 'zdodge', 're-plus-plus', 'pj-dodge'] as const;
 type ActiveDodgeMode = Exclude<(typeof DODGE_VALUES)[number], 'off'>;
 type SettingConfig = Parameters<PluginContext['registerSetting']>[1];
 type SettingCallback = Parameters<PluginContext['registerSetting']>[2];
@@ -62,6 +63,7 @@ export function register(ctx: PluginContext) {
       { label: 'RE-Sim (Quadtree)', value: 'rollout-quad' },
       { label: 'zDodge', value: 'zdodge' },
       { label: 'RE++', value: 're-plus-plus' },
+      { label: 'PJDodge', value: 'pj-dodge' },
     ],
   }, () => flush());
 
@@ -243,6 +245,32 @@ export function register(ctx: PluginContext) {
   registerModeSetting('re-plus-plus', 'reppDebugOverlay', onOff('[RE++] Debug overlay', 'on'),
     (v: string) => sendDllFeature('reppDebugOverlay', v === 'on' ? 1 : 0));
 
+  // ── PJDodge settings ──────────────────────────────────────────────────────
+  registerModeSetting('pj-dodge', 'pjdodgeHorizonMs', {
+    label: '[PJDodge] Prediction horizon (ms)',
+    type: 'range', value: 600, min: 300, max: 1200, step: 25,
+  }, (v: number) => sendDllFeature('pjdodgeHorizonMs', v));
+  registerModeSetting('pj-dodge', 'pjdodgeLeadMs', {
+    label: '[PJDodge] Command lead (ms — latency compensation)', advanced: true,
+    type: 'range', value: 40, min: 0, max: 150, step: 5,
+  }, (v: number) => sendDllFeature('pjdodgeLeadMs', v));
+  registerModeSetting('pj-dodge', 'pjdodgeHitScale', {
+    label: '[PJDodge] Hit scale (1 = exact game hitbox)', advanced: true,
+    type: 'range', value: 1, min: 0.5, max: 1.5, step: 0.05,
+  }, (v: number) => sendDllFeature('pjdodgeHitScale', v));
+  registerModeSetting('pj-dodge', 'pjdodgeSafeWalk', onOff('[PJDodge] Safe walk (avoid damaging ground)', 'on'),
+    (v: string) => sendDllFeature('pjdodgeSafeWalk', v === 'on' ? 1 : 0));
+  registerModeSetting('pj-dodge', 'pjdodgeSpeedScale', onOff('[PJDodge] Match intent speed on gentle overrides', 'on'),
+    (v: string) => sendDllFeature('pjdodgeSpeedScale', v === 'on' ? 1 : 0));
+  registerModeSetting('pj-dodge', 'pjdodgePredictionAccuracy',
+    onOff('[PJDodge] Prediction accuracy (per-shot clock calibration)', 'on'),
+    (v: string) => sendDllFeature('pjdodgePredictionAccuracy', v === 'on' ? 1 : 0));
+  registerModeSetting('pj-dodge', 'pjdodgeDebugOverlay', onOff('[PJDodge] Debug overlay', 'on'),
+    (v: string) => sendDllFeature('pjdodgeDebugOverlay', v === 'on' ? 1 : 0));
+  registerModeSetting('pj-dodge', 'pjdodgeLockFollow',
+    onOff('[PJDodge] Lock follow (walk toward lock target)', 'off'),
+    (v: string) => sendDllFeature('pjdodgeLockFollow', v === 'on' ? 1 : 0));
+
   registerModeSetting('xdodge', 'xdodgeAstar', onOff('[Goal] Smart goal pathing'),
     (v: string) => sendDllFeature('xdodgeAstar', v === 'on' ? 1 : 0));
   registerModeSetting('xdodge', 'xdodgeWeighting', onOff('[Goal] Weighted danger field'),
@@ -394,6 +422,12 @@ export function register(ctx: PluginContext) {
     sendDllFeature('reppMode', ctx.getSetting<string>('reppMode') === 'autopilot' ? 1 : 0);
     sendDllFeature('reppStandOnType', ctx.getSetting<number>('reppStandOnType'));
     for (const k of ['reppFollowLantern', 'reppAvoidHazards', 'reppDebugOverlay'])
+      sendDllFeature(k, ctx.getSetting<string>(k) === 'on' ? 1 : 0);
+    // PJDodge settings.
+    sendDllFeature('pjdodgeHorizonMs', ctx.getSetting<number>('pjdodgeHorizonMs'));
+    sendDllFeature('pjdodgeLeadMs', ctx.getSetting<number>('pjdodgeLeadMs'));
+    sendDllFeature('pjdodgeHitScale', ctx.getSetting<number>('pjdodgeHitScale'));
+    for (const k of ['pjdodgeSafeWalk', 'pjdodgeSpeedScale', 'pjdodgePredictionAccuracy', 'pjdodgeDebugOverlay', 'pjdodgeLockFollow'])
       sendDllFeature(k, ctx.getSetting<string>(k) === 'on' ? 1 : 0);
     // Re-apply the 60fps cap here too. The onEnabledChange / clientConnected
     // handlers were the only places setting targetFrameRate, so if the cap

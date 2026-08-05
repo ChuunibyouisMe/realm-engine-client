@@ -7,7 +7,9 @@
 #include "ZDodge.h"
 #include "ZDodgeTarget.h"
 #include "RePP.h"
+#include "PJDodge.h"
 #include "DbgFileLog.h"
+#include "BootGate.h"
 #include <windows.h>
 
 using TestTAB::DodgeMode;
@@ -129,6 +131,20 @@ void ApplyDodgeModeWithEnter(DodgeMode nextMode)
     const bool enabling = nextMode != DodgeMode::Off && s_prevDodgeMode == DodgeMode::Off;
     (void)enabling;
 
+    // On a patched/degraded game the offsets are stale. Running the dodge engines'
+    // enter/disable machinery below reaches a crash on every mode switch: disabling
+    // ZDodge publishes a debug snapshot whose whole-struct copy faults (confirmed by
+    // map-symbolicating the minidump — ZDodge::PublishDebug -> g_debug). Leave every
+    // engine untouched until offsets recover; the per-frame dispatch is gated the
+    // same way (DangerPlanner), so nothing runs, and this re-applies once healed.
+    if (BootGate::Degraded()) {
+        static int s_gn = 0;
+        if ((s_gn++ % 60) == 0)
+            DBG_FILE_LOG("[DodgeSwap] ApplyDodgeModeWithEnter gated — BootGate degraded "
+                         "(stale offsets after game patch); dodge engines untouched until recovery");
+        return;
+    }
+
     // XDodge and Rollout both run from Detour_AppEngineUpdate; only one is
     // enabled at a time (mutual exclusivity enforced here).
     const bool rollout = (nextMode == DodgeMode::RolloutGrid
@@ -137,14 +153,16 @@ void ApplyDodgeModeWithEnter(DodgeMode nextMode)
     RolloutDodge::SetEnabled(rollout);
     ZDodge::SetEnabled(nextMode == DodgeMode::ZDodge);
     RePP::SetEnabled(nextMode == DodgeMode::RePP);
+    PJDodge::SetEnabled(nextMode == DodgeMode::PJDodge);
 
 
     DBG_FILE_LOG("[DodgeSwap] ApplyDodgeModeWithEnter nextMode=" << static_cast<int>(nextMode)
-        << " (0=Off 1=XDodge 2=RollGrid 3=RollQuad 4=ZDodge 5=RePP)"
+        << " (0=Off 1=XDodge 2=RollGrid 3=RollQuad 4=ZDodge 5=RePP 6=PJDodge)"
         << " -> enabled{ XDodge=" << XDodge::IsEnabled()
         << " Rollout=" << RolloutDodge::IsEnabled()
         << " ZDodge=" << ZDodge::IsEnabled()
-        << " RePP=" << RePP::IsEnabled() << " }");
+        << " RePP=" << RePP::IsEnabled()
+        << " PJDodge=" << PJDodge::IsEnabled() << " }");
     if (nextMode == DodgeMode::XDodge) {
         XDodge::OnEnter();
         // Install the AppEngineManager::Update detour that drives the dodge Tick.
@@ -166,6 +184,9 @@ void ApplyDodgeModeWithEnter(DodgeMode nextMode)
         DangerPlanner::TryInstall();
     } else if (nextMode == DodgeMode::RePP) {
         RePP::OnEnter();
+        DangerPlanner::TryInstall();
+    } else if (nextMode == DodgeMode::PJDodge) {
+        PJDodge::OnEnter();
         DangerPlanner::TryInstall();
     }
 
@@ -652,6 +673,9 @@ void TestTAB::Tick(bool menuVisible)
             if (RePP::IsEnabled()) {
                 RePP::RenderDebugOverlay(camX, camY, angleRad, zoom, cx, cy);
             }
+            if (PJDodge::IsEnabled()) {
+                PJDodge::RenderDebugOverlay(camX, camY, angleRad, zoom, cx, cy);
+            }
         }
 
         // Locked enemy visualization — red reticle + two rings:
@@ -962,7 +986,7 @@ void TestTAB::RenderMovementSection()
     ImGui::Indent(8.f);
 
     int modeIdx = static_cast<int>(g_dodgeMode);
-    const char* modeLabels[] = { "Off", "RE-Plus", "RE-Sim (Grid)", "RE-Sim (Quadtree)", "zDodge", "RE++" };
+    const char* modeLabels[] = { "Off", "RE-Plus", "RE-Sim (Grid)", "RE-Sim (Quadtree)", "zDodge", "RE++", "PJDodge" };
     ImGui::SetNextItemWidth(240.f);
     if (ImGui::Combo("Mode##dodgeModeCombo", &modeIdx, modeLabels, IM_ARRAYSIZE(modeLabels))) {
         ApplyDodgeModeWithEnter(static_cast<DodgeMode>(modeIdx));
@@ -983,6 +1007,9 @@ void TestTAB::RenderMovementSection()
     } else if (g_dodgeMode == DodgeMode::RePP) {
         ImGui::Spacing();
         RePP::RenderSettings();
+    } else if (g_dodgeMode == DodgeMode::PJDodge) {
+        ImGui::Spacing();
+        PJDodge::RenderSettings();
     }
 
     ImGui::Unindent(8.f);
@@ -1392,7 +1419,7 @@ namespace TestTAB {
     void      SetDodgeMode(DodgeMode m)
     {
         const int v = static_cast<int>(m);
-        ApplyDodgeModeWithEnter((v >= 0 && v <= static_cast<int>(DodgeMode::RePP))
+        ApplyDodgeModeWithEnter((v >= 0 && v <= static_cast<int>(DodgeMode::PJDodge))
             ? m : DodgeMode::Off);
     }
     // SetDodgeModeWithEnter — IpcBridge calls this to route a dashboard dodge-mode

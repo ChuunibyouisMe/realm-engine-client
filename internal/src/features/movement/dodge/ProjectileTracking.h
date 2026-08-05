@@ -55,6 +55,27 @@ namespace ProjectileTracking {
 
     int CountValidForDiagnostics();
 
+    // ── Prediction accuracy ──────────────────────────────────────────────────
+    // Per-projectile clock calibration: the game's own positionAt is exact, but
+    // our elapsed-time input is coarse (10-16ms GetTickCount) and spawn-hook
+    // latency biases it. When ON, each tick fits a small time correction τ from
+    // the live position so future predictions sit on the true trajectory, and
+    // records the residual (unexplained model error) for diagnostics. OFF =
+    // legacy tick-based elapsed. Default ON.
+    void SetPredictionAccuracy(bool enabled);
+    bool GetPredictionAccuracy();
+
+    // Aggregate residual snapshot for the overlay / diag bridge.
+    struct PredictionDiag {
+        bool  enabled = false;
+        int   calibrated = 0;
+        float emaAbsTauMs = 0.f;     // typical clock error being corrected (ms)
+        float maxAbsTauMs = 0.f;     // worst clock error (ms, slow decay)
+        float emaCrossTiles = 0.f;   // typical residual the model can't explain (tiles)
+        float maxCrossTiles = 0.f;   // worst residual (tiles, slow decay)
+    };
+    PredictionDiag GetPredictionDiag();
+
     // HBEAKBIHANL.HHFDCMIIIHF (projRadius) — same float as Chebyshev T; offset from IL2CPP (BeeByte name).
     bool     TryReadProjRadiusFromInstance(void* hbeakInstance, float& outRadius);
     uint32_t GetHbeakProjRadiusOffset();

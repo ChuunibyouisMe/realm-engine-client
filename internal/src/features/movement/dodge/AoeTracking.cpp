@@ -4,6 +4,7 @@
 #include "GameState.h"
 #include "RuntimeOffsets.h"
 #include "DbgFileLog.h"
+#include "BootGate.h"
 #include "minhook/MinHook.h"
 #include <windows.h>
 #include <atomic>
@@ -1010,6 +1011,19 @@ void Install()
 
 void EnsureInstalled()
 {
+    // Feature gate (mirrors ProjectileTracking): don't install AoE hooks against
+    // a stale/patched game. FeatureAllowed() is fail-closed until BootGate is
+    // Ready with the AoE anchors healthy; installing detours over shifted AoE
+    // offsets crashes on load-in. Called from every dodge sensor + WorldTAB, so
+    // the gate lives here (the shared choke point), not in Install().
+    if (!BootGate::FeatureAllowed("AoeTracking")) {
+        static std::atomic<uint32_t> s_gate{ 0 };
+        const uint32_t n = s_gate.fetch_add(1, std::memory_order_relaxed);
+        if (n == 0u || (n % 240u) == 0u)
+            DBG_FILE_LOG("[AoeTracking] EnsureInstalled gated — BootGate not Ready / "
+                "AoE anchor stale; AoE tracking OFF until offsets refresh");
+        return;
+    }
     RuntimeOffsets::EnsureAll();
     TryInitInfrastructure();
     if (!s_mhInit || !g_CsInit) {

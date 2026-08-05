@@ -5,6 +5,7 @@
 #include "RolloutDodge.h"
 #include "ZDodge.h"
 #include "RePP.h"
+#include "PJDodge.h"
 #include "DbgFileLog.h"
 #include "SteerInput.h"
 #include "GhostHit.h"
@@ -13,6 +14,7 @@
 #include "GameState.h"
 #include "Il2CppResolver.h"
 #include "RuntimeOffsets.h"
+#include "BootGate.h"
 #include "helpers.h"
 #include "AutoAim.h"
 #include "ChatToast.h"
@@ -717,7 +719,24 @@ void __fastcall Detour_AppEngineUpdate(void* __this, void* method)
     const bool rolloutOn = RolloutDodge::IsEnabled();
     const bool zaclinOn = ZDodge::IsEnabled();
     const bool reppOn   = RePP::IsEnabled();
-    if (xdodgeOn || rolloutOn || zaclinOn || reppOn) {
+    const bool pjOn     = PJDodge::IsEnabled();
+    if (xdodgeOn || rolloutOn || zaclinOn || reppOn || pjOn) {
+        // BootGate safety gate: on a patched/degraded game the entity/projectile
+        // offsets are stale. The dodge sensors fill fixed-size buffers from counts
+        // read at those offsets, so a garbage count overruns a buffer and hard-
+        // crashes (observed: 0xC0000005 write-AV inside an in-DLL sensor array via
+        // memcpy). Skip ALL dodge work until the offsets recover; Degraded() clears
+        // and this re-enables automatically once the self-heal writes back healthy
+        // offsets. Gating the capture hooks alone was insufficient — the per-frame
+        // Tick/sensors read enemies/tiles too, not just the (now-gated) bullets.
+        if (BootGate::Degraded()) {
+            static int s_degN = 0;
+            if ((s_degN++ % 240) == 0)
+                DBG_FILE_LOG("[Dodge] Detour gated — BootGate degraded (stale offsets "
+                             "after game patch); dodge OFF until offsets refresh "
+                             "(attempt=" << s_degN << ")");
+            return;
+        }
         // Use GameState::GetLocalPtr() directly — the EXACT source AutoAim
         // uses (and AutoAim works). LocalPlayer::GetPtr() is a second-hand
         // mirror refreshed only by LocalPlayer::Tick() on the render thread
@@ -744,7 +763,8 @@ void __fastcall Detour_AppEngineUpdate(void* __this, void* method)
         // shared external goal that dodge engines can consume.
         SteerInput::Tick();
         ResolveEnemyLock(px, py);
-        if (reppOn)         RePP::Tick(p, px, py, dt);
+        if (pjOn)           PJDodge::Tick(p, px, py, dt);
+        else if (reppOn)    RePP::Tick(p, px, py, dt);
         else if (zaclinOn)  ZDodge::Tick(p, px, py, dt);
         else if (rolloutOn) RolloutDodge::Tick(p, px, py, dt);
         else                XDodge::Tick(p, px, py, dt);

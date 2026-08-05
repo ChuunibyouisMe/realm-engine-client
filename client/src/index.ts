@@ -57,6 +57,7 @@ import { PluginManager } from './plugins/PluginManager.js';
 import { PacketInspector } from './dashboard/server/PacketInspector.js';
 import { DevServer } from './dashboard/server/DevServer.js';
 import { GameHooker } from './hooker/GameHooker.js';
+import { ExaltFinder } from './hooker/ExaltFinder.js';
 import { InternalBridge } from './bridge/InternalBridge.js';
 import { setDllFeatureSender } from './bridge/DllFeatureBus.js';
 import { Logger } from './util/Logger.js';
@@ -264,6 +265,40 @@ async function main() {
       versionDeploySource = 'error';
       Logger.warn('Main', `Internal DLL deployment failed: ${(err as Error).message}`);
     }
+    }
+  }
+
+  // 0c. Hands-off Steam coverage. In auto-detect mode a machine can have BOTH a
+  // Deca-launcher install (AppData/Documents) and a Steam install at once. We
+  // hooked the first one above; mirror the same two DLLs (winhttp.dll proxy +
+  // version.dll hooks) into every OTHER detected install so launching the game
+  // from Steam — or from the launcher — both auto-load the hooks with zero path
+  // config. Skipped when the user pinned a custom path: then we honor exactly
+  // that directory and touch nothing else. Fully best-effort — never throws.
+  const primaryInstall = hooker.gameDirectory;
+  if (!configuredRotmgPath && primaryInstall) {
+    try {
+      const primary = primaryInstall;
+      const others = ExaltFinder.findAll().filter((d) => d && d !== primary);
+      for (const dir of others) {
+        // Neither winhttp.dll nor version.dll ships in a RotMG game folder (both
+        // are Windows system DLLs), so a plain copy can't clobber a real one.
+        for (const dll of ['winhttp.dll', 'version.dll']) {
+          const src = resolve(primary, dll);
+          if (!existsSync(src)) continue;
+          try {
+            copyFileSync(src, resolve(dir, dll));
+          } catch (err) {
+            Logger.warn('Main', `Could not mirror ${dll} into ${dir}: ${(err as Error).message} (is the game running there?)`);
+          }
+        }
+        Logger.log('Main', `Mirrored hooks into additional install${ExaltFinder.isSteamInstall(dir) ? ' (Steam)' : ''}: ${dir}`);
+      }
+      if (others.length === 0) {
+        Logger.log('Main', `One Exalt install detected${ExaltFinder.isSteamInstall(primary) ? ' (Steam)' : ''}: ${primary}`);
+      }
+    } catch (err) {
+      Logger.warn('Main', `Hook mirror step failed: ${(err as Error).message}`);
     }
   }
 

@@ -52,6 +52,18 @@ function extractUserIdFromJwt(accessToken: string): string | undefined {
     return undefined;
   }
 }
+
+/**
+ * True when a Deca account/verify `<Error>` says the token/secret is bound to a
+ * different machine (HWID) — the one rejection a fresh-HWID retry can fix.
+ * Deliberately excludes password/captcha/suspended/rate-limit errors: a
+ * different HWID won't change those outcomes, so retrying only wastes requests.
+ */
+function isHwidBindingError(rawError: string): boolean {
+  const lower = String(rawError || '').toLowerCase();
+  if (!lower) return false;
+  return lower.includes('different machine') || lower.includes('token for different');
+}
 // ─────────────────────────────────────────────────────────────────────────────
 import { getClientToken, clearCachedHwid } from '../../util/Hwid.js';
 import { ConditionEffect } from '../../constants/ConditionEffect.js';
@@ -1364,6 +1376,65 @@ export class DevServer {
   }
 
   /**
+   * When the configured install is the Steam build of RotMG Exalt, ensure a
+   * `steam_appid.txt` sits next to the exe before we launch it directly.
+   *
+   * Without it, the Steam build's early `SteamAPI_RestartAppIfNecessary` call
+   * quits the process we just spawned and relaunches a *fresh* one through
+   * Steam — which orphans the winhttp.dll hook's launcher-PID correlation and
+   * loses our credential-launch tracking. With the file present, a direct spawn
+   * initializes Steamworks against the already-running Steam client and stays in
+   * the same process, so our inject + PID tracking hold.
+   *
+   * The AppID is read from the install's own Steam appmanifest (never
+   * hardcoded), so it stays correct even if Deca re-IDs the app. This is a
+   * strict no-op for the standalone (Deca-launcher) install — that build must
+   * NOT have this file, and it has no `steamapps` ancestor so we never write it.
+   */
+  private ensureSteamAppIdFile(gamePath: string): void {
+    try {
+      // The game lives at <steamapps>/common/<installdir>. Walk up looking for
+      // that exact "common under steamapps" shape; bail if it isn't one.
+      let steamAppsDir: string | null = null;
+      let dir = gamePath;
+      for (let i = 0; i < 6; i++) {
+        const parent = dirname(dir);
+        if (!parent || parent === dir) break;
+        if (basename(dir).toLowerCase() === 'common' && basename(parent).toLowerCase() === 'steamapps') {
+          steamAppsDir = parent;
+          break;
+        }
+        dir = parent;
+      }
+      if (!steamAppsDir) return; // Standalone/Deca install → leave it alone.
+
+      const appIdPath = join(gamePath, 'steam_appid.txt');
+      if (existsSync(appIdPath)) return; // Steam itself, or a prior run, already wrote it.
+
+      const installDirName = basename(gamePath).toLowerCase();
+      let appId: string | null = null;
+      for (const entry of readdirSync(steamAppsDir)) {
+        const m = /^appmanifest_(\d+)\.acf$/i.exec(entry);
+        if (!m) continue;
+        const acf = readFileSync(join(steamAppsDir, entry), 'utf8');
+        const installDir = acf.match(/"installdir"\s+"([^"]+)"/i)?.[1]?.trim().toLowerCase();
+        if (installDir && installDir === installDirName) {
+          appId = m[1];
+          break;
+        }
+      }
+      if (!appId) {
+        Logger.warn('DevServer', `Steam install detected but no appmanifest matched "${basename(gamePath)}"; skipping steam_appid.txt.`);
+        return;
+      }
+      writeFileSync(appIdPath, appId, 'utf8');
+      Logger.log('DevServer', `Wrote steam_appid.txt (AppID ${appId}) for Steam-build direct launch.`);
+    } catch (err) {
+      Logger.warn('DevServer', `ensureSteamAppIdFile failed: ${(err as Error).message}`);
+    }
+  }
+
+  /**
    * Launch the RotMG Exalt executable.
    */
   private launchGame(): { ok: boolean; error?: string } {
@@ -1380,6 +1451,8 @@ export class DevServer {
     if (!existsSync(exePath)) {
       return { ok: false, error: `RotMG Exalt.exe not found at: ${exePath}` };
     }
+
+    this.ensureSteamAppIdFile(gamePath);
 
     try {
       const child = spawn(exePath, [], {
@@ -1404,6 +1477,14 @@ export class DevServer {
    * include `steamid`, set `game_net`/`play_platform` to `Unity_steam`, and
    * set `game_net_user_id` to the Steam ID. The Steam client does NOT need
    * to be running — Deca authenticates with the user-issued Steam secret only.
+   *
+   * Deca binds every token/secret — email and Steam alike — to the clientToken
+   * (HWID) that was live when it was issued. A stale cached hwid.txt is the
+   * single most common cause of a "token for different machine" rejection, and
+   * it bites Steam accounts hardest because the Steam secret is long-lived and
+   * gets bound once. So on a machine-binding rejection we retry ONCE with a
+   * freshly computed HWID (bypassing hwid.txt); if that works, the cached file
+   * was stale and we drop it so future launches use the value that just worked.
    */
   private async verifyDecaAccount(
     email: string,
@@ -1413,6 +1494,46 @@ export class DevServer {
   ): Promise<
     | { token: string; tokenTimestamp: string; tokenExpiration: string }
     | { error: string }
+  > {
+    const first = await this.verifyDecaAccountOnce(email, password, clientToken, steam);
+    if (!('error' in first)) return first;
+
+    // Only an HWID/machine-binding rejection is worth retrying with a fresh
+    // HWID. Transport failures, wrong passwords, captchas, rate limits, and
+    // suspensions are not machine-bound — retrying would waste a request or
+    // trip Deca's rate limiter.
+    if (first.transport || !isHwidBindingError(first.rawError)) {
+      return { error: first.error };
+    }
+
+    const freshToken = getClientToken({ skipFile: true });
+    if (!freshToken || freshToken === clientToken) {
+      return { error: first.error };
+    }
+
+    Logger.log('DevServer', 'account/verify rejected HWID; retrying once with fresh WMI HWID (bypassing hwid.txt).');
+    const retry = await this.verifyDecaAccountOnce(email, password, freshToken, steam);
+    if (!('error' in retry)) {
+      const removed = clearCachedHwid();
+      Logger.log('DevServer', `Fresh-HWID verify succeeded${removed ? '; removed stale hwid.txt' : ''}.`);
+      return retry;
+    }
+    return { error: retry.error };
+  }
+
+  /**
+   * One account/verify round-trip. `rawError` is the unmapped Deca `<Error>`
+   * text (used by the wrapper to decide whether a fresh-HWID retry can help);
+   * `transport` marks network/timeout failures that a retry can't fix.
+   */
+  private async verifyDecaAccountOnce(
+    email: string,
+    password: string,
+    clientToken: string,
+    steam?: { steamId: string },
+  ): Promise<
+    | { token: string; tokenTimestamp: string; tokenExpiration: string }
+    | { error: string; rawError: string; transport?: boolean }
   > {
     const steamId = String(steam?.steamId || '').trim();
     const useSteam = !!steam && steamId !== '';
@@ -1457,18 +1578,36 @@ export class DevServer {
               resolve(token);
               return;
             }
-            const errMsg = parseVerifyError(data);
-            resolve({ error: errMsg });
+            const rawError = (data.match(/<Error>([^<]*)<\/Error>/i)?.[1] ?? '').trim();
+            if (!rawError) {
+              // Neither a token nor a recognizable <Error>. Surface the HTTP
+              // status + a body snippet so an unexpected response shape (HTML
+              // challenge page, empty body, or a deprecated Steam-secret path
+              // that no longer returns <Error>) is diagnosable instead of a
+              // blank "Login failed."
+              const status = res.statusCode ?? 0;
+              const snippet = data.replace(/\s+/g, ' ').trim().slice(0, 200);
+              Logger.warn(
+                'DevServer',
+                `account/verify unrecognized response (HTTP ${status})${useSteam ? ' [steam]' : ''}: ${snippet || '<empty body>'}`,
+              );
+              resolve({
+                error: `Login failed — unexpected server response (HTTP ${status}). ${snippet ? `Response: ${snippet}` : 'Empty response body.'}`,
+                rawError: '',
+              });
+              return;
+            }
+            resolve({ error: parseVerifyError(data), rawError });
           });
         },
       );
       req.on('error', (err) => {
         Logger.error('DevServer', `account/verify request failed: ${err.message}`);
-        resolve({ error: 'Network error. Try again.' });
+        resolve({ error: 'Network error. Try again.', rawError: '', transport: true });
       });
       req.setTimeout(15000, () => {
         req.destroy();
-        resolve({ error: 'Request timed out.' });
+        resolve({ error: 'Request timed out.', rawError: '', transport: true });
       });
       req.write(body, 'utf8');
       req.end();
@@ -1569,9 +1708,18 @@ export class DevServer {
     const { token, tokenTimestamp, tokenExpiration } = verifyResult;
 
     const b64 = (s: string) => Buffer.from(s, 'utf8').toString('base64');
+    // platform stays `Deca` even for Steam accounts: this is a token launch, so
+    // the account is already authenticated and the access token Deca returned is
+    // provider-agnostic (it works for char-list, servers, and game connect the
+    // same way regardless of whether we verified via email or Steam secret).
+    // `platform:Steam` would additionally make the client try to init the Steam
+    // overlay/ticket path, which needs the Steam client running — the opposite
+    // of what this bypass launch is for. Do not change without runtime-testing.
     const args = `data:{platform:Deca,guid:${b64(email)},token:${b64(token)},tokenTimestamp:${b64(tokenTimestamp)},tokenExpiration:${b64(tokenExpiration)},env:4,serverName:${serverName}}`;
     const windowExtras = this.buildCredentialLaunchWindowExtras(opts);
     const launchedAtIso = new Date().toISOString();
+
+    this.ensureSteamAppIdFile(gamePath);
 
     try {
       const child = spawn(exePath, [args, ...windowExtras], {

@@ -151,6 +151,7 @@ uint32_t Hbeak_ProjRadius         = 0x1D4;  // HHFDCMIIIHF — collision radius 
 uint32_t Hbeak_ProjPropsPtr       = 0x118;  // FOMOIBCKIFP — per-shot ProjectileProperties override
 uint32_t Hbeak_Angle              = 0x148;  // FFFFKPDHEFP — spawn angle Single
 uint32_t Hbeak_InstanceDamage     = 0x174;  // DBNNDLKNECM — per-instance damage Int32
+uint32_t Hbeak_SpawnAgeMs         = 0x16C;  // GLEGBLDBOJF — spawn-age ms (path anchoring / expiry)
 uint32_t PP_CustomHitbox          = 0x148;  // "CustomHitbox" — ProjectileCustomHitbox* reference
 uint32_t PP_IsArmorPiercing       = 0x138;  // "IsArmorPiercing"
 uint32_t CH_OffsetX               = 0x10;   // "offsetX" — custom hitbox X offset Single
@@ -388,6 +389,7 @@ static Entry s_entries[] = {
     { "HBEAKBIHANL", { "FOMOIBCKIFP" },                                           1, 0, &Hbeak_ProjPropsPtr,    false },
     { "HBEAKBIHANL", { "FFFFKPDHEFP" },                                           1, 0, &Hbeak_Angle,           false },
     { "HBEAKBIHANL", { "DBNNDLKNECM" },                                           1, 0, &Hbeak_InstanceDamage,  false },
+    { "HBEAKBIHANL", { "GLEGBLDBOJF" },                                           1, 0, &Hbeak_SpawnAgeMs,      false },
 
     // ── ProjectileProperties continued ────────────────────────────────────────
     { "ProjectileProperties", { "CustomHitbox", "customHitbox" },                 2, 0, &PP_CustomHitbox,       false },
@@ -494,7 +496,16 @@ Il2CppClass* GetRecoveredProjClass() { return s_recoveredProjClass; }
 static Il2CppClass* ScanForProjectileClass()
 {
     Il2CppClass* ppClass = Resolver::FindClassLoose("ProjectileProperties");
-    if (!ppClass) return nullptr;
+    if (!ppClass) {
+        static bool s_saidOnce = false;
+        if (!s_saidOnce) {
+            s_saidOnce = true;
+            DBG_FILE_LOG("[RuntimeOffsets] ScanForProjectileClass: anchor 'ProjectileProperties' does "
+                "NOT resolve — BeeByte renamed the anchor class itself this patch, so this scan can "
+                "never succeed. OffsetRecovery's spawn-method signature scan is the rename-proof path.");
+        }
+        return nullptr;
+    }
     Il2CppClass* singleClass = Resolver::FindClass("System", "Single");
     Il2CppClass* int32Class  = Resolver::FindClass("System", "Int32");
 
@@ -524,27 +535,50 @@ static Il2CppClass* ScanForProjectileClass()
     return ctx.best;
 }
 
+// Fwd-decl: defined after the offset-health arrays (s_entryState/s_entryFallback).
+// Heals FallbackGaveUp entries against a known class — shared by the structural
+// projectile-class recovery and the live-instance recovery.
+static int HealFallbackEntriesAgainstClass(Il2CppClass* cls, const char* clsLabel);
+
 int AutoResolveByStructure()
 {
-    if (s_structScanDone) return 0;   // the metadata walk is expensive — run it once
-    s_structScanDone = true;
+    if (s_structScanDone) return 0;   // the walk is expensive — but only latch once it WORKS
 
     int healed = 0;
     if (Il2CppClass* proj = ScanForProjectileClass()) {
+        s_structScanDone = true;      // latch here, not on entry: a failed scan must stay retryable
         s_recoveredProjClass = proj;
-        ++healed;
         DBG_FILE_LOG("[RuntimeOffsets] AutoResolveByStructure: projectile class recovered via "
             "ProjectileProperties* anchor (name='" << il2cpp_class_get_name(proj) << "')");
+        // Write-back (A1b/Phase 2): heal the projectile class's FallbackGaveUp field
+        // entries against the recovered class so the BootGate audit + feature gate
+        // flip GREEN and ProjectileTracking re-installs on its own. Fields whose
+        // NAMES also renamed stay FallbackGaveUp — the anchor keeps the feature
+        // gated (safe, no crash) until a value/param strategy recovers them.
+        healed += HealFallbackEntriesAgainstClass(proj, il2cpp_class_get_name(proj));
     } else {
-        DBG_FILE_LOG("[RuntimeOffsets] AutoResolveByStructure: projectile class NOT found "
-            "(ProjectileProperties anchor missing or no candidate matched)");
+        static bool s_saidOnce = false;
+        if (!s_saidOnce) {
+            s_saidOnce = true;
+            DBG_FILE_LOG("[RuntimeOffsets] AutoResolveByStructure: projectile class NOT found. NOT "
+                "latched — retryable (this first runs ~90ms into boot, before a world exists). See the "
+                "ScanForProjectileClass line above for which half failed.");
+        }
     }
-    // TODO(A1b/Phase 2): resolve Hbeak_InstanceDamage by live value-range against
-    // [MinDamage,MaxDamage], and write the recovered class/offsets back into
-    // s_entries so the BootGate audit + Quest Board flip GREEN (today they stay
-    // stale because EnsureAll's name pass still can't resolve the renamed name).
     return healed;
 }
+int AdoptProjectileClass(Il2CppClass* cls)
+{
+    if (!cls) return 0;
+    if (s_recoveredProjClass == cls) return 0;   // already adopted — don't re-heal every frame
+    s_recoveredProjClass = cls;
+    s_structScanDone     = true;                 // the signature scan beat us to it; stop walking
+    const char* nm = il2cpp_class_get_name(cls);
+    DBG_FILE_LOG("[RuntimeOffsets] projectile class ADOPTED from spawn-method signature "
+                 "(this patch's name='" << (nm ? nm : "?") << "') — no name lookup involved");
+    return HealFallbackEntriesAgainstClass(cls, nm ? nm : "?");
+}
+
 const char* GetUnresolvedClassNames()  { return s_unresolvedClassNames; }
 
 // ── Offset health status (parallel to s_entries) ─────────────────────────────
@@ -588,6 +622,22 @@ void MarkSuspect(const uint32_t* offsetVar)
         if (s_entries[i].outPtr == offsetVar) { s_entryState[i] = OffsetState::Suspect; return; }
 }
 
+// Write a value-fingerprinted offset back into the ledger (OffsetRecovery uses
+// this after matching a renamed field's live value). Flips the row to a healthy
+// state so the BootGate audit + gate + Quest Board see it resolved.
+bool CommitRecoveredOffset(uint32_t* offsetVar, uint32_t newOffset)
+{
+    for (int i = 0; i < kEntryCount; ++i) {
+        if (s_entries[i].outPtr != offsetVar) continue;
+        *offsetVar = newOffset;
+        s_entryState[i] = (newOffset == s_entryFallback[i]) ? OffsetState::ResolvedMatch
+                                                            : OffsetState::ResolvedShifted;
+        s_entries[i].done = true;
+        return true;
+    }
+    return false;
+}
+
 // ── A4: recover renamed classes from a LIVE OBJECT the cheat already holds ────
 // `il2cpp_object_get_class(instance)` is the gold-standard rung — it can't be
 // wrong. FindFieldOnHierarchy walks the instance's whole parent chain, so one
@@ -596,13 +646,9 @@ void MarkSuspect(const uint32_t* offsetVar)
 // are currently broken (class never resolved → FallbackGaveUp); healthy offsets
 // are never touched. Heals the class-rename case (field names still stable);
 // field-name renames within a recovered class still need value/param matching.
-int RecoverFromInstance(void* instance)
+static int HealFallbackEntriesAgainstClass(Il2CppClass* cls, const char* clsLabel)
 {
-    if (!instance) return 0;
-    Il2CppClass* cls = il2cpp_object_get_class(reinterpret_cast<Il2CppObject*>(instance));
     if (!cls) return 0;
-    const char* clsName = il2cpp_class_get_name(cls);
-
     int healed = 0;
     for (int i = 0; i < kEntryCount; ++i) {
         if (s_entryState[i] != OffsetState::FallbackGaveUp) continue;   // only heal broken entries
@@ -616,12 +662,22 @@ int RecoverFromInstance(void* instance)
                                                               : OffsetState::ResolvedShifted;
             e.done = true;
             ++healed;
-            DBG_FILE_LOG("[RuntimeOffsets] RecoverFromInstance(live '" << (clsName ? clsName : "?")
-                << "'): " << e.className << "::" << e.tryNames[t] << " healed -> 0x"
+            DBG_FILE_LOG("[RuntimeOffsets] heal-against-class '" << (clsLabel ? clsLabel : "?")
+                << "': " << e.className << "::" << e.tryNames[t] << " healed -> 0x"
                 << std::hex << resolved << std::dec);
             break;
         }
     }
+    return healed;
+}
+
+int RecoverFromInstance(void* instance)
+{
+    if (!instance) return 0;
+    Il2CppClass* cls = il2cpp_object_get_class(reinterpret_cast<Il2CppObject*>(instance));
+    if (!cls) return 0;
+    const char* clsName = il2cpp_class_get_name(cls);
+    const int healed = HealFallbackEntriesAgainstClass(cls, clsName);
     if (healed)
         DBG_FILE_LOG("[RuntimeOffsets] RecoverFromInstance via live class '"
             << (clsName ? clsName : "?") << "' healed " << healed << " entr(ies)");

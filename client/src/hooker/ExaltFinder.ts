@@ -15,32 +15,36 @@ export class ExaltFinder {
    *   4. Steam common apps paths
    */
   static find(): string | null {
-    // 1. Environment variable override
-    const envPath = process.env.ROTMG_PATH;
-    if (envPath && ExaltFinder.isValidExaltDir(envPath)) {
-      Logger.log('ExaltFinder', `Found Exalt via ROTMG_PATH: ${envPath}`);
-      return envPath;
+    const all = ExaltFinder.findAll();
+    if (all.length > 0) {
+      Logger.log('ExaltFinder', `Found Exalt at: ${all[0]}`);
+      return all[0];
     }
+    Logger.warn('ExaltFinder', 'Could not auto-detect Exalt installation.');
+    Logger.warn('ExaltFinder', 'Set the ROTMG_PATH environment variable to your Exalt directory.');
+    Logger.warn('ExaltFinder', `Expected to find ${EXALT_EXE} in the directory.`);
+    return null;
+  }
 
+  /**
+   * Every valid Exalt install on this machine, in priority order. A user can
+   * have BOTH a Deca-launcher install (AppData/Documents) and a Steam install
+   * at once — `find()` returns only the first, but for hands-off "launch from
+   * Steam" we want the hooks in every copy so it works no matter which the user
+   * starts. Deduped; order matters (ROTMG_PATH → AppData → Documents → Steam).
+   */
+  static findAll(): string[] {
     const home = homedir();
-
-    // 2. AppData\Local — this is where the exe actually runs from
     const appDataLocal = process.env.LOCALAPPDATA || join(home, 'AppData', 'Local');
-    const appDataPath = join(appDataLocal, 'RealmOfTheMadGod', 'Production');
-    if (ExaltFinder.isValidExaltDir(appDataPath)) {
-      Logger.log('ExaltFinder', `Found Exalt at: ${appDataPath}`);
-      return appDataPath;
-    }
 
-    // 3. Documents folder (legacy/alt location)
-    const documentsPath = join(home, 'Documents', 'RealmOfTheMadGod', 'Production');
-    if (ExaltFinder.isValidExaltDir(documentsPath)) {
-      Logger.log('ExaltFinder', `Found Exalt at: ${documentsPath}`);
-      return documentsPath;
-    }
-
-    // 4. Steam common apps (RotMG Exalt folder name) + LoginGUI-style "Realm of the Mad God" and C:\Games
-    const steamPaths = [
+    const candidates = [
+      // 1. Environment variable override
+      process.env.ROTMG_PATH,
+      // 2. AppData\Local — where the Deca-launcher exe actually runs from
+      join(appDataLocal, 'RealmOfTheMadGod', 'Production'),
+      // 3. Documents folder (legacy/alt location)
+      join(home, 'Documents', 'RealmOfTheMadGod', 'Production'),
+      // 4. Steam common apps + LoginGUI-style "Realm of the Mad God" and C:\Games
       'C:\\Program Files (x86)\\Steam\\steamapps\\common\\RotMG Exalt',
       'C:\\Program Files\\Steam\\steamapps\\common\\RotMG Exalt',
       'C:\\Program Files (x86)\\Steam\\steamapps\\common\\Realm of the Mad God',
@@ -52,17 +56,18 @@ export class ExaltFinder {
       'E:\\SteamLibrary\\steamapps\\common\\RotMG Exalt',
     ];
 
-    for (const steamPath of steamPaths) {
-      if (ExaltFinder.isValidExaltDir(steamPath)) {
-        Logger.log('ExaltFinder', `Found Exalt via Steam: ${steamPath}`);
-        return steamPath;
+    const found: string[] = [];
+    for (const dir of candidates) {
+      if (dir && ExaltFinder.isValidExaltDir(dir) && !found.includes(dir)) {
+        found.push(dir);
       }
     }
+    return found;
+  }
 
-    Logger.warn('ExaltFinder', 'Could not auto-detect Exalt installation.');
-    Logger.warn('ExaltFinder', 'Set the ROTMG_PATH environment variable to your Exalt directory.');
-    Logger.warn('ExaltFinder', `Expected to find ${EXALT_EXE} in the directory.`);
-    return null;
+  /** True when `dir` looks like a Steam library install (…/steamapps/common/…). */
+  static isSteamInstall(dir: string): boolean {
+    return /[\\/]steamapps[\\/]common[\\/]/i.test(String(dir || ''));
   }
 
   private static isValidExaltDir(dir: string): boolean {

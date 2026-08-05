@@ -169,6 +169,21 @@ struct WorldProjectile
     float    turnClamp           = 0.f;
     /// PP[0x1AC] — inverse-accel threshold scale for boomerang two-segment blend.
     float    turnAccelInv        = 0.f;
+
+    // ── Prediction-accuracy stack (toggle: ProjectileTracking::SetPredictionAccuracy) ──
+    /// QueryPerformanceCounter-based spawn time (ms). 0 = not captured (pre-toggle slot).
+    double   spawnQpcMs      = 0.0;
+    /// τ — calibrated clock correction (ms), fit from live position each tick.
+    float    clockOffsetMs   = 0.f;
+    /// Calibrated elapsed time at snapshot (ms). <0 = calibration unavailable this frame.
+    float    elapsedCalMs    = -1.f;
+    /// EMA |along-track| residual expressed as clock error (ms) — should hug 0 after calibration.
+    float    residAlongMs    = 0.f;
+    /// EMA cross-track residual (tiles) — model error τ cannot explain (offset drift / new shot type).
+    float    residCrossTiles = 0.f;
+    bool     predCalibrated  = false;
+    /// In-slot throttle bookkeeping (store-internal; meaningless on copies).
+    double   lastCalibQpcMs  = 0.0;
 };
 
 // WorldAoe source — which hook path recorded this entry.
