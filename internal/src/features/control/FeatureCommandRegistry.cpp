@@ -24,6 +24,7 @@
 #include "RolloutDodge.h"
 #include "ZDodge.h"
 #include "RePP.h"
+#include "PJDodge.h"
 #include "SpeedHack.h"
 #include <string>
 #include <cctype>
@@ -216,6 +217,21 @@ namespace {
         return ApplyFeatureTable(f, h, sizeof(h) / sizeof(h[0]));
     }
 
+    bool ApplyPJDodgeFeature(const FeatureCommand& f)
+    {
+        static const FeatureHandler h[] = {
+            FH_FLOAT("pjdodgeHorizonMs", PJDodge::SetHorizonMs),
+            FH_FLOAT("pjdodgeLeadMs", PJDodge::SetLeadMs),
+            FH_FLOAT("pjdodgeHitScale", PJDodge::SetHitScale),
+            FH_INT_BOOL("pjdodgeSafeWalk", PJDodge::SetSafeWalk),
+            FH_INT_BOOL("pjdodgeSpeedScale", PJDodge::SetSpeedScale),
+            FH_INT_BOOL("pjdodgePredictionAccuracy", PJDodge::SetPredictionAccuracy),
+            FH_INT_BOOL("pjdodgeDebugOverlay", PJDodge::SetDebugOverlay),
+            FH_INT_BOOL("pjdodgeLockFollow", PJDodge::SetLockFollow)
+        };
+        return ApplyFeatureTable(f, h, sizeof(h) / sizeof(h[0]));
+    }
+
     bool ApplyInputCameraSkinFeature(const FeatureCommand& f)
     {
         static const FeatureHandler h[] = {
@@ -275,6 +291,7 @@ namespace FeatureCommandRegistry {
         if (ApplyXDodgeFeature(feature)) return true;
         if (ApplyZDodgeFeature(feature)) return true;
         if (ApplyReppFeature(feature)) return true;
+        if (ApplyPJDodgeFeature(feature)) return true;
         if (ApplyRolloutFeature(feature)) return true;
         if (ApplyInputCameraSkinFeature(feature)) return true;
         ApplyDangerPlannerFeature(feature);
