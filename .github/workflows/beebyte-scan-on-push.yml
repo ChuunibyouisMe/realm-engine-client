@@ -1,18 +1,15 @@
 name: Beebyte scan — trigger on push
 
-# Kicks the full beebyte offset scan on the API server whenever code
-# lands on main. The version-check gate still applies — if DECA hasn't
-# shipped a new build since the last scan, it exits in seconds (one
-# HTTP GET). Use force=true to bypass the gate and re-scan regardless.
+# Kicks the beebyte version-check workflow on realm-engine whenever code
+# lands on main that touches internal/ or client/plugins/. This triggers
+# the existing beebyte-version-check-trigger.yml over there (which SSHes
+# to the API server and kicks the systemd unit).
 #
-# Prerequisites (same secrets as the realm-engine workflows):
-#   EC2_SSH_KEY   — private key that can SSH to the API host
-#   EC2_HOST      — API server hostname/IP
-#   EC2_USER      — SSH user (e.g. ec2-user)
-#
-# Server-side env (in /etc/default/beebyte-scan):
-#   BEEBYTE_CLIENT_REPO=Evergreen-Techworks/realm-engine-client
-#   BEEBYTE_CLIENT_REPO_TOKEN=<fine-grained PAT with Contents + PRs r/w>
+# Prerequisites:
+#   BEEBYTE_DISPATCH_TOKEN — a PAT (classic or fine-grained) that can
+#     trigger workflow_dispatch on Evergreen-Techworks/realm-engine.
+#     Fine-grained: scope to realm-engine with Actions read & write.
+#     Classic: `repo` scope.
 
 on:
   push:
@@ -27,69 +24,23 @@ on:
         type: boolean
         required: false
         default: false
-      tail_seconds:
-        description: How long to tail the run output (seconds).
-        required: false
-        default: "2400"
 
 jobs:
   trigger-scan:
     name: Trigger beebyte scan
     runs-on: ubuntu-latest
-    environment: production
     concurrency:
       group: beebyte-scan
       cancel-in-progress: false
     steps:
-      - name: Setup SSH
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
-
-      - name: Kick version-check + tail
+      - name: Dispatch version-check on realm-engine
         env:
-          FORCE: ${{ inputs.force || 'false' }}
-          TAIL_SECONDS: ${{ inputs.tail_seconds || '2400' }}
+          GH_TOKEN: ${{ secrets.BEEBYTE_DISPATCH_TOKEN }}
         run: |
-          ssh -i ~/.ssh/deploy_key ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} \
-            "FORCE=${FORCE} TAIL_SECONDS=${TAIL_SECONDS} bash -s" <<'REMOTE'
-            set -e
-            STATE=/var/lib/beebyte-scan
-
-            echo "=== trigger source: realm-engine-client push ==="
-            echo "current-snapshot-id: $(cat $STATE/current-snapshot-id 2>/dev/null || echo '(unset)')"
-            echo "refreshed-for build: $(cat $STATE/refreshed-build.txt 2>/dev/null || echo '(none)')"
-            echo "last-scanned build:  $(cat $STATE/last-scanned-build.txt 2>/dev/null || echo '(none)')"
-
-            if [ "${FORCE}" = "true" ]; then
-              echo ""
-              echo "=== force: clearing gate markers ==="
-              sudo rm -f "$STATE/last-scanned-build.txt" "$STATE/refreshed-build.txt" "$STATE/refresh-attempts.json"
-            fi
-
-            echo ""
-            echo "=== kicking beebyte-version-check.service ==="
-            sudo systemctl --no-block start beebyte-version-check.service
-            START_TS=$(date +%s)
-            END_TS=$((START_TS + ${TAIL_SECONDS:-2400}))
-
-            sudo journalctl -u beebyte-version-check.service --since "1 minute ago" -f --no-pager &
-            TAIL_PID=$!
-
-            while [ $(date +%s) -lt $END_TS ]; do
-              ST=$(sudo systemctl is-active beebyte-version-check.service 2>/dev/null || true)
-              if [ "$ST" != "active" ] && [ "$ST" != "activating" ]; then
-                sleep 1; break
-              fi
-              sleep 5
-            done
-            kill $TAIL_PID 2>/dev/null || true
-            wait $TAIL_PID 2>/dev/null || true
-
-            echo ""
-            echo "=== post-run state ==="
-            echo "last-scanned build: $(cat $STATE/last-scanned-build.txt 2>/dev/null || echo '(none)')"
-            sudo systemctl status beebyte-version-check.service --no-pager -n 10 || true
-          REMOTE
+          FORCE="${{ inputs.force || 'false' }}"
+          echo "Dispatching beebyte-version-check-trigger.yml (force=${FORCE})"
+          gh workflow run beebyte-version-check-trigger.yml \
+            -R Evergreen-Techworks/realm-engine \
+            -f force="${FORCE}" \
+            -f tail_seconds=2400
+          echo "Dispatched — check realm-engine Actions for progress."
