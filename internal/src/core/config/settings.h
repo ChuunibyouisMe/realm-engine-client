@@ -14,7 +14,7 @@ public:
 
  // Developer diagnostics egress (MCP bridge). When on, DiagBridge mirrors live
  // game/IL2CPP state to %LOCALAPPDATA%\RealmEngine\*.json so the re-mcp server
- // (internal/tools/re-mcp) can runtime-test offset recovery and dodge behaviour.
+ // (internal/tools/re-mcp) can runtime-test dodge behaviour.
  // Off by default — a normal user never writes these files; a developer flips it
  // on from the Test tab. Toggled at runtime, not compiled out.
  bool bEnableDiagBridge = false;

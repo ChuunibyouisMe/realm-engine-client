@@ -135,8 +135,6 @@
     <ClCompile Include="src\core\runtime\Il2CppResolver.cpp" />
     <ClCompile Include="src\core\runtime\RuntimeOffsets.cpp" />
     <ClCompile Include="src\core\runtime\BootGate.cpp" />
-    <ClCompile Include="src\core\runtime\QuestBoard.cpp" />
-    <ClCompile Include="src\core\runtime\OffsetRecovery.cpp" />
     <ClCompile Include="src\core\runtime\DiagBridge.cpp" />
     <ClCompile Include="src\core\runtime\GameState.cpp" />
     <ClCompile Include="src\core\runtime\LocalPlayer.cpp" />
@@ -264,8 +262,6 @@
     <ClInclude Include="src\core\runtime\Il2CppResolver.h" />
     <ClInclude Include="src\core\runtime\RuntimeOffsets.h" />
     <ClInclude Include="src\core\runtime\BootGate.h" />
-    <ClInclude Include="src\core\runtime\QuestBoard.h" />
-    <ClInclude Include="src\core\runtime\OffsetRecovery.h" />
     <ClInclude Include="src\core\runtime\DiagBridge.h" />
     <ClInclude Include="src\core\runtime\GameState.h" />
     <ClInclude Include="src\core\runtime\LocalPlayer.h" />

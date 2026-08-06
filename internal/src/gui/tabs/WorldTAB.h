@@ -284,9 +284,7 @@ namespace WorldTAB {
     // Writes a null-terminated ASCII string into buf. Returns false if unavailable.
     bool ReadMapName(char* buf, int bufLen);
 
-    // A4 tile recovery: a sample live BGAIOPJMHLO tile instance from the last tile
-    // walk (any valid one — the pointer is good regardless of field staleness).
-    // RuntimeOffsets::RecoverTileChain uses it to heal the tile + TileProps classes.
+    // A sample live BGAIOPJMHLO tile instance from the last tile walk.
     // nullptr until a world with tiles has been walked.
     void* GetSampleTilePtr();
 }

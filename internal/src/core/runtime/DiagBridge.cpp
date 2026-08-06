@@ -28,8 +28,6 @@ const char* StateName(BootGate::State s) {
         case BootGate::State::WaitingForMetadata: return "WaitingForMetadata";
         case BootGate::State::Resolving:          return "Resolving";
         case BootGate::State::Auditing:           return "Auditing";
-        case BootGate::State::UpdateDetected:     return "UpdateDetected";
-        case BootGate::State::Discovery:          return "Discovery";
         case BootGate::State::Ready:              return "Ready";
     }
     return "Unknown";
@@ -214,23 +212,7 @@ void PollCommand(const char* dir) {
 
     char result[512] = {};
     bool ok = true;
-    if (strcmp(cmd, "run_recovery") == 0) {
-        void* pp = LocalPlayer::GetPtr();
-        void* wm = GameState::GetWorldMgr();
-        int healed = RuntimeOffsets::AutoResolveByStructure();
-        healed += RuntimeOffsets::RecoverFromInstance(pp);   // FKALGHJIADI→LKHPPBEGNOM→KJMONHENJEN
-        healed += RuntimeOffsets::RecoverFromInstance(wm);   // HJMBOMEHGDJ
-        healed += RuntimeOffsets::RecoverTileChain(WorldTAB::GetSampleTilePtr());  // BGAIOPJMHLO + CMFPKCJHKKB
-        Il2CppClass* rc = RuntimeOffsets::GetRecoveredProjClass();
-        // Report the live class identities too — verifies A4 identification even
-        // when everything's healthy (nothing to heal, but the names should match).
-        const char* projN = rc ? il2cpp_class_get_name(rc) : "none";
-        const char* playN = pp ? il2cpp_class_get_name(il2cpp_object_get_class(reinterpret_cast<Il2CppObject*>(pp))) : "none";
-        const char* wmN   = wm ? il2cpp_class_get_name(il2cpp_object_get_class(reinterpret_cast<Il2CppObject*>(wm)))   : "none";
-        snprintf(result, sizeof(result), "healed=%d projClass=%s playerClass=%s worldMgr=%s",
-            healed, projN, playN, wmN);
-        ok = (rc != nullptr);
-    } else if (strcmp(cmd, "resolve_class") == 0) {
+    if (strcmp(cmd, "resolve_class") == 0) {
         Il2CppClass* k = arg[0] ? Resolver::FindClassLoose(arg) : nullptr;
         snprintf(result, sizeof(result), "%s", k ? "found" : "not found");
         ok = (k != nullptr);
@@ -282,10 +264,6 @@ void WriteSnapshot(const char* dir) {
     int healthy = 0, total = 0;
     BootGate::GetProgress(healthy, total);
 
-    const char* recName = nullptr;
-    if (Il2CppClass* rc = RuntimeOffsets::GetRecoveredProjClass())
-        recName = il2cpp_class_get_name(rc);
-
     const bool inWorld = LocalPlayer::GetPtr() != nullptr;
 
     char buf[4096];
@@ -293,7 +271,6 @@ void WriteSnapshot(const char* dir) {
         "{\n"
         "  \"seq\": %llu,\n"
         "  \"bootgate\": { \"state\": \"%s\", \"degraded\": %s, \"healthy\": %d, \"total\": %d, \"status\": \"%s\" },\n"
-        "  \"recoveredProjClass\": %s%s%s,\n"
         "  \"player\": { \"inWorld\": %s, \"hp\": %d, \"maxHp\": %d, \"defense\": %d, \"x\": %.2f, \"y\": %.2f },\n"
         "  \"anchors\": [",
         static_cast<unsigned long long>(++s_seq),
@@ -301,7 +278,6 @@ void WriteSnapshot(const char* dir) {
         BootGate::Degraded() ? "true" : "false",
         healthy, total,
         BootGate::StatusLine(),
-        recName ? "\"" : "", recName ? recName : "null", recName ? "\"" : "",
         inWorld ? "true" : "false",
         LocalPlayer::GetHP(), LocalPlayer::GetMaxHP(), LocalPlayer::GetDefense(),
         LocalPlayer::GetX(), LocalPlayer::GetY());
@@ -390,7 +366,7 @@ void Tick() {
     const ULONGLONG now = GetTickCount64();
 
     // Commands are polled more often than the snapshot is written, so on-demand
-    // queries (run_recovery / resolve_class / field_offset) answer within ~200ms.
+    // queries (resolve_class / field_offset) answer within ~200ms.
     if (s_lastCmdMs == 0 || now - s_lastCmdMs >= 200) {
         s_lastCmdMs = now;
         PollCommand(dir);

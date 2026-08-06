@@ -63,50 +63,12 @@ namespace RuntimeOffsets {
     // Flag a specific offset variable SUSPECT from a live sanity check.
     void MarkSuspect(const uint32_t* offsetVar);
 
-    // Write a value-fingerprinted offset into the ledger + mark it resolved.
-    // Returns false if offsetVar isn't a registered entry. Used by OffsetRecovery.
-    bool CommitRecoveredOffset(uint32_t* offsetVar, uint32_t newOffset);
-
     // Live sanity checks: validate the critical offsets against plausible ranges
     // and MarkSuspect any that read CLEAR garbage (a stale offset usually reads a
     // wildly out-of-range int). The caller passes the live values it already has,
-    // so this stays decoupled from the read path. Catches the silent
-    // stale-defense / stale-damage case behind over-estimated damage.
+    // so this stays decoupled from the read path.
     void SanityCheckPlayerStats(int32_t hp, int32_t maxHp, int32_t defense);
     void SanityCheckProjDamage(int32_t sampledDamage);
-
-    // ── Structural auto-recovery (Phase 1 / A1) ──────────────────────────────
-    // Identify renamed classes by stable STRUCTURE (type-anchor), not name, so a
-    // BeeByte rename after a game patch self-heals. Runs the il2cpp metadata scan
-    // at most once; cheap to call repeatedly. Returns the number of classes freshly
-    // recovered. Invoked from the BootGate Discovery state.
-    int AutoResolveByStructure();
-    // The projectile instance class — the class holding a field of type
-    // ProjectileProperties. NOTE: that anchor is NOT rename-proof. Verified against
-    // the live 2026-07-16 metadata: BeeByte renamed `ProjectileProperties` itself, so
-    // the name lookup this scan starts from returns null and the whole scan fails.
-    // OffsetRecovery's spawn-method SIGNATURE scan is the rename-proof path and feeds
-    // the result back via AdoptProjectileClass().
-    // nullptr until recovered; ProjectileTracking consults this before its
-    // name-based lookup so bullets are captured again with no dump, every patch.
-    Il2CppClass* GetRecoveredProjClass();
-
-    // Adopt a projectile class discovered structurally elsewhere (OffsetRecovery's
-    // spawn-method signature scan, which needs no surviving names). Publishes it as
-    // the recovered class and heals the still-name-resolvable field entries against
-    // it. Returns the number of field entries healed.
-    int AdoptProjectileClass(Il2CppClass* cls);
-
-    // A4: recover renamed classes from a LIVE OBJECT (player ptr, WorldManager ptr,
-    // any entity) via il2cpp_object_get_class + its parent chain — the gold-standard
-    // rung. Re-resolves ONLY currently-broken entries (class never resolved) against
-    // the live class; healthy offsets are untouched. Returns the number healed.
-    // The caller supplies the instance (keeps this free of LocalPlayer/GameState deps).
-    int RecoverFromInstance(void* instance);
-
-    // A4 tile chain: heal BGAIOPJMHLO from a live tile instance, then read its
-    // (now-correct) TileProps pointer and heal CMFPKCJHKKB. Returns # healed.
-    int RecoverTileChain(void* tileInstance);
 
     // ── Cached FieldInfo pointers ─────────────────────────────────────────────
     // Non-null once EnsureAll() has seen the owning class in IL2CPP metadata.

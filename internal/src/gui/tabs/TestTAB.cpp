@@ -1158,7 +1158,7 @@ void TestTAB::Render()
     ImGui::Checkbox("Enable diagnostics egress (MCP bridge)##diagbridge", &settings.bEnableDiagBridge);
     if (ImGui::IsItemHovered()) {
         ImGui::SetTooltip("%s",
-            "Developer tool. Mirrors live BootGate / offset-recovery / dodge state to\n"
+            "Developer tool. Mirrors live BootGate / dodge state to\n"
             "%LOCALAPPDATA%\\RealmEngine\\*.json so the re-mcp server (internal/tools/re-mcp)\n"
             "can runtime-test the DLL from an MCP client. Off = nothing is written.");
     }
