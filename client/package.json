@@ -30,7 +30,7 @@
     "koffi": "^2.9.0",
     "node-addon-api": "^8.7.0",
     "sharp": "^0.33.5",
-    "ws": "^8.16.0"
+    "ws": "^8.21.2"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
