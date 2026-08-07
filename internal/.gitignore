@@ -27,3 +27,8 @@ il2cpp-d.*/
 
 # Auto-generated per-build handshake secret (build-prod.mjs) — never commit
 src/core/ipc/BuildSecrets.h
+
+# Reverse-engineering reference material — third-party notes, private packet
+# dumps, decompiled headers. Never distributed with the source.
+refs/
+
