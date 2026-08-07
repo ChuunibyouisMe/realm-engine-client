@@ -1,8 +1,16 @@
 import type { PacketMap } from '../packet-map.js';
 import { invertPacketMap } from '../packet-map.js';
 
-// AUTO-GENERATED from RealmShark PacketType.java
-// Source: C:\\\\Users\\\\trump\\\\Desktop\\\\References\\\\RealmShark-realmshark\\\\src\\\\main\\\\java\\\\packets\\\\PacketType.java
+// AUTO-GENERATED from the canonical realmlib packet map.
+// Source of truth: HiveManager/HeadlessClient/realmlib/src/packet-map.ts +
+//                  Nexus/headless/realmlib/src/packet-map.ts (byte-identical).
+// Two independent upstream forks agree on all 183 ID->name mappings for the current
+// Exalt build. To update after a game patch, re-sync from either upstream and rerun
+// scripts/sync-packet-map.mjs (which produced this file).
+//
+// A handful of packet names differ between REC's historical naming and realmlib's.
+// The map entry uses REC's name (so downstream string comparisons keep working);
+// realmlib's name is exported as an alias below so imports from either world resolve.
 export const PACKET_MAP: PacketMap = {
   "0": "FAILURE",
   "1": "TELEPORT",
@@ -20,6 +28,7 @@ export const PACKET_MAP: PacketMap = {
   "14": "TRADEACCEPTED",
   "15": "GUILDREMOVE",
   "16": "PETUPGRADEREQUEST",
+  "17": "ENTER_ARENA",
   "18": "GOTO",
   "19": "INVDROP",
   "20": "OTHERHIT",
@@ -49,6 +58,7 @@ export const PACKET_MAP: PacketMap = {
   "47": "USEPORTAL",
   "48": "QUEST_ROOM_MSG",
   "49": "ALLYSHOOT",
+  "50": "IMMINENT_ARENA_WAVE",
   "51": "RESKIN",
   "52": "RESET_DAILY_QUESTS",
   "53": "PET_CHANGE_FORM_MSG",
@@ -65,6 +75,7 @@ export const PACKET_MAP: PacketMap = {
   "65": "GOTOACK",
   "66": "GLOBAL_NOTIFICATION",
   "67": "NOTIFICATION",
+  "68": "ARENA_DEATH",
   "69": "CLIENTSTAT",
   "74": "HELLO",
   "75": "DAMAGE",
@@ -72,6 +83,7 @@ export const PACKET_MAP: PacketMap = {
   "77": "INVITEDTOGUILD",
   "78": "PETYARDUPDATE",
   "79": "PASSWORD_PROMPT",
+  "80": "ACCEPT_ARENA_DEATH",
   "81": "UPDATEACK",
   "82": "QUESTOBJID",
   "83": "PIC",
@@ -104,17 +116,17 @@ export const PACKET_MAP: PacketMap = {
   "113": "QUEUE_CANCEL",
   "114": "EXALTATION_BONUS_CHANGED",
   "115": "REDEEM_EXALTATION_REWARD",
-  "117": "VAULT_UPDATE",
+  "117": "VAULT_UPDATE",  // realmlib: VAULT_CONTENT
   "118": "FORGE_REQUEST",
   "119": "FORGE_RESULT",
   "120": "FORGE_UNLOCKED_BLUEPRINTS",
-  "121": "SHOOT_ACK",
-  "122": "CHANGE_ALLYSHOOT",
-  "123": "GET_PLAYERS_LIST_MESSAGE",
-  "124": "MODERATOR_ACTION_MESSAGE",
+  "121": "SHOOT_ACK",  // realmlib: SHOOTACK
+  "122": "CHANGE_ALLYSHOOT",  // realmlib: CHANGE_ALLY_SHOOT
+  "123": "GET_PLAYERS_LIST_MESSAGE",  // admin only
+  "124": "MODERATOR_ACTION_MESSAGE",  // admin only
   "126": "CREEP_MOVE_MESSAGE",
-  "129": "CUSTOM_MAP_DELETE",
-  "131": "CUSTOM_MAP_LIST",
+  "129": "CUSTOM_MAP_DELETE",  // admin only
+  "131": "CUSTOM_MAP_LIST",  // admin only
   "133": "CREEP_HIT",
   "134": "PLAYER_CALLOUT",
   "136": "BUY_REFINEMENT",
@@ -137,8 +149,8 @@ export const PACKET_MAP: PacketMap = {
   "160": "BUY_EMOTE",
   "162": "SET_TRACKED_SEASON",
   "163": "CLAIM_MISSION",
-  "164": "UNKNOWN164",
-  "165": "UNKNOWN165",
+  "164": "CLAIM_MISSION_RESULT",
+  "165": "PROGRESS_UPDATE",
   "166": "STASIS",
   "167": "SET_DISCOVERABLE",
   "169": "REALM_SCORE_UPDATE",
@@ -155,8 +167,12 @@ export const PACKET_MAP: PacketMap = {
   "185": "UPGRADE_ENCHANTER",
   "187": "UPGRADE_ENCHANTMENT",
   "189": "REROLL_ALL_ENCHANTMENTS",
-  "190": "UNKNOWN190",
+  "190": "ENCHANT",
   "191": "RESET_ENCHANTMENT_REROLL_COUNT",
+  "192": "RESET_ENCHANTMENT_REROLL_COUNT_RESULT",
+  "195": "BLACKSMITH_REQUEST",
+  "196": "BLACKSMITH_DISMANTLE",
+  "197": "SELECT_ENTRANCE",
   "200": "CREATE_PARTY_MESSAGE",
   "204": "PARTY_ACTION_RESULT",
   "207": "PARTY_ACTION",
@@ -168,7 +184,16 @@ export const PACKET_MAP: PacketMap = {
   "215": "PARTY_JOIN_REQUEST",
   "217": "PARTY_REQUEST_RESPONSE",
   "218": "FOR_RECONNECT",
+  "219": "REDEEM_VOUCHER",
+  "220": "VOUCHER_RESULT",
   "222": "LOADING_SCREEN",
+  "224": "UNKNOWN224",
+  "232": "CLAIM_ACCOUNT_LEVEL_REWARD",
+  "233": "CLAIM_ACCOUNT_LEVEL_REWARD_RESULT",
+  "234": "CLAIM_REWARD",
+  "235": "CLAIM_REWARD_RESULT",
+  "237": "CLAIM_DAILY_ITEM",
+  "239": "CLAIM_REWARDS_INFO_REQUEST",
   "1000": "IP_ADDRESS",
 };
 
@@ -176,6 +201,7 @@ export const BIDIR_PACKET_MAP: PacketMap = invertPacketMap(PACKET_MAP);
 
 export enum PacketType {
   ACCEPTTRADE = "ACCEPTTRADE",
+  ACCEPT_ARENA_DEATH = "ACCEPT_ARENA_DEATH",
   ACCOUNTLIST = "ACCOUNTLIST",
   ACTIVATE_CRUCIBLE = "ACTIVATE_CRUCIBLE",
   ACTIVEPETUPDATE = "ACTIVEPETUPDATE",
@@ -184,6 +210,9 @@ export enum PacketType {
   AOE = "AOE",
   AOEACK = "AOEACK",
   APPLY_ENCHANTMENT = "APPLY_ENCHANTMENT",
+  ARENA_DEATH = "ARENA_DEATH",
+  BLACKSMITH_DISMANTLE = "BLACKSMITH_DISMANTLE",
+  BLACKSMITH_REQUEST = "BLACKSMITH_REQUEST",
   BOOST_BP_MILESTONE = "BOOST_BP_MILESTONE",
   BUY = "BUY",
   BUYRESULT = "BUYRESULT",
@@ -194,15 +223,25 @@ export enum PacketType {
   CHANGEGUILDRANK = "CHANGEGUILDRANK",
   CHANGETRADE = "CHANGETRADE",
   CHANGE_ALLYSHOOT = "CHANGE_ALLYSHOOT",
+  CHANGE_ALLY_SHOOT = "CHANGE_ALLY_SHOOT",
+  CHATHELLO = "CHATHELLO",
+  CHATTOKEN = "CHATTOKEN",
   CHECKCREDITS = "CHECKCREDITS",
   CHEST_REWARD_RESULT = "CHEST_REWARD_RESULT",
   CHOOSENAME = "CHOOSENAME",
+  CLAIM_ACCOUNT_LEVEL_REWARD = "CLAIM_ACCOUNT_LEVEL_REWARD",
+  CLAIM_ACCOUNT_LEVEL_REWARD_RESULT = "CLAIM_ACCOUNT_LEVEL_REWARD_RESULT",
   CLAIM_BATTLE_PASS = "CLAIM_BATTLE_PASS",
   CLAIM_BP_MILESTONE_RESULT = "CLAIM_BP_MILESTONE_RESULT",
   CLAIM_CHEST_REWARD = "CLAIM_CHEST_REWARD",
+  CLAIM_DAILY_ITEM = "CLAIM_DAILY_ITEM",
   CLAIM_LOGIN_REWARD_MSG = "CLAIM_LOGIN_REWARD_MSG",
   CLAIM_MISSION = "CLAIM_MISSION",
+  CLAIM_MISSION_RESULT = "CLAIM_MISSION_RESULT",
+  CLAIM_REWARD = "CLAIM_REWARD",
   CLAIM_REWARDS_INFO_PROMPT = "CLAIM_REWARDS_INFO_PROMPT",
+  CLAIM_REWARDS_INFO_REQUEST = "CLAIM_REWARDS_INFO_REQUEST",
+  CLAIM_REWARD_RESULT = "CLAIM_REWARD_RESULT",
   CLIENTSTAT = "CLIENTSTAT",
   CONVERT_SEASONAL_CHARACTER = "CONVERT_SEASONAL_CHARACTER",
   CREATE = "CREATE",
@@ -223,8 +262,10 @@ export enum PacketType {
   DELETE_PET = "DELETE_PET",
   EDITACCOUNTLIST = "EDITACCOUNTLIST",
   EMOTE = "EMOTE",
+  ENCHANT = "ENCHANT",
   ENEMYHIT = "ENEMYHIT",
   ENEMYSHOOT = "ENEMYSHOOT",
+  ENTER_ARENA = "ENTER_ARENA",
   ESCAPE = "ESCAPE",
   EVOLVE_PET = "EVOLVE_PET",
   EXALTATION_BONUS_CHANGED = "EXALTATION_BONUS_CHANGED",
@@ -245,6 +286,7 @@ export enum PacketType {
   GUILDRESULT = "GUILDRESULT",
   HATCH_PET = "HATCH_PET",
   HELLO = "HELLO",
+  IMMINENT_ARENA_WAVE = "IMMINENT_ARENA_WAVE",
   INCOMING_PARTY_INVITE = "INCOMING_PARTY_INVITE",
   INCOMING_PARTY_MEMBER_INFO = "INCOMING_PARTY_MEMBER_INFO",
   INVDROP = "INVDROP",
@@ -287,6 +329,7 @@ export enum PacketType {
   PLAYER_CALLOUT = "PLAYER_CALLOUT",
   PLAYSOUND = "PLAYSOUND",
   PONG = "PONG",
+  PROGRESS_UPDATE = "PROGRESS_UPDATE",
   QUESTOBJID = "QUESTOBJID",
   QUEST_FETCH_ASK = "QUEST_FETCH_ASK",
   QUEST_FETCH_RESPONSE = "QUEST_FETCH_RESPONSE",
@@ -299,19 +342,23 @@ export enum PacketType {
   REALM_SCORE_UPDATE = "REALM_SCORE_UPDATE",
   RECONNECT = "RECONNECT",
   REDEEM_EXALTATION_REWARD = "REDEEM_EXALTATION_REWARD",
+  REDEEM_VOUCHER = "REDEEM_VOUCHER",
   REQUESTTRADE = "REQUESTTRADE",
   REROLL_ALL_ENCHANTMENTS = "REROLL_ALL_ENCHANTMENTS",
   RESET_DAILY_QUESTS = "RESET_DAILY_QUESTS",
   RESET_ENCHANTMENT_REROLL_COUNT = "RESET_ENCHANTMENT_REROLL_COUNT",
+  RESET_ENCHANTMENT_REROLL_COUNT_RESULT = "RESET_ENCHANTMENT_REROLL_COUNT_RESULT",
   RESKIN = "RESKIN",
   RESKIN_UNLOCK = "RESKIN_UNLOCK",
   RETITLE = "RETITLE",
+  SELECT_ENTRANCE = "SELECT_ENTRANCE",
   SERVERPLAYERSHOOT = "SERVERPLAYERSHOOT",
   SETCONDITION = "SETCONDITION",
   SET_ABILITY = "SET_ABILITY",
   SET_DISCOVERABLE = "SET_DISCOVERABLE",
   SET_GRAVE_STONE = "SET_GRAVE_STONE",
   SET_TRACKED_SEASON = "SET_TRACKED_SEASON",
+  SHOOTACK = "SHOOTACK",
   SHOOT_ACK = "SHOOT_ACK",
   SHOWEFFECT = "SHOWEFFECT",
   SKIN_RECYCLE = "SKIN_RECYCLE",
@@ -330,6 +377,7 @@ export enum PacketType {
   UNKNOWN165 = "UNKNOWN165",
   UNKNOWN181 = "UNKNOWN181",
   UNKNOWN190 = "UNKNOWN190",
+  UNKNOWN224 = "UNKNOWN224",
   UNLOCK_ENCHANTMENT = "UNLOCK_ENCHANTMENT",
   UNLOCK_ENCHANTMENT_SLOT = "UNLOCK_ENCHANTMENT_SLOT",
   UNLOCK_INFORMATION = "UNLOCK_INFORMATION",
@@ -339,12 +387,32 @@ export enum PacketType {
   UPGRADE_ENCHANTMENT = "UPGRADE_ENCHANTMENT",
   USEITEM = "USEITEM",
   USEPORTAL = "USEPORTAL",
+  VAULT_CONTENT = "VAULT_CONTENT",
   VAULT_UPDATE = "VAULT_UPDATE",
   VERIFY_EMAIL = "VERIFY_EMAIL",
+  VOUCHER_RESULT = "VOUCHER_RESULT",
 }
 
+/**
+ * Realmlib canonical names that differ from REC. Each alias resolves to the same
+ * wire string as the REC name, so `pkt.type === PacketAlias.VAULT_CONTENT` and
+ * `pkt.type === PacketType.VAULT_UPDATE` are both true (they are the same string).
+ */
+export const PacketAlias = {
+  VAULT_CONTENT: PacketType.VAULT_UPDATE,
+  SHOOTACK: PacketType.SHOOT_ACK,
+  CHANGE_ALLY_SHOOT: PacketType.CHANGE_ALLYSHOOT,
+} as const;
+
+// Direction is not encoded in the wire protocol. Existing values are preserved
+// from the prior REC map; new entries from realmlib are annotated with the
+// evidence source in a trailing comment ("verified against realmlib
+// incoming/outgoing dir" — cross-checked by matching each name to the
+// corresponding *-packet.ts file under `packets/incoming/` or
+// `packets/outgoing/` in the upstream realmlib checkout).
 export const PACKET_DIRECTION: Record<PacketType, "Incoming" | "Outgoing"> = {
   ACCEPTTRADE: "Outgoing",
+  ACCEPT_ARENA_DEATH: "Outgoing",  // verified against realmlib incoming/outgoing dir
   ACCOUNTLIST: "Incoming",
   ACTIVATE_CRUCIBLE: "Outgoing",
   ACTIVEPETUPDATE: "Incoming",
@@ -353,6 +421,9 @@ export const PACKET_DIRECTION: Record<PacketType, "Incoming" | "Outgoing"> = {
   AOE: "Incoming",
   AOEACK: "Outgoing",
   APPLY_ENCHANTMENT: "Outgoing",
+  ARENA_DEATH: "Incoming",  // verified against realmlib incoming/outgoing dir
+  BLACKSMITH_DISMANTLE: "Incoming",  // verified against realmlib incoming/outgoing dir (was Outgoing heuristic)
+  BLACKSMITH_REQUEST: "Outgoing",  // verified against realmlib incoming/outgoing dir
   BOOST_BP_MILESTONE: "Outgoing",
   BUY: "Outgoing",
   BUYRESULT: "Incoming",
@@ -363,15 +434,25 @@ export const PACKET_DIRECTION: Record<PacketType, "Incoming" | "Outgoing"> = {
   CHANGEGUILDRANK: "Outgoing",
   CHANGETRADE: "Outgoing",
   CHANGE_ALLYSHOOT: "Outgoing",
+  CHANGE_ALLY_SHOOT: "Outgoing",  // verified against realmlib incoming/outgoing dir (was Incoming heuristic)
+  CHATHELLO: "Outgoing",  // verified against realmlib incoming/outgoing dir (was Incoming heuristic)
+  CHATTOKEN: "Incoming",  // verified against realmlib incoming/outgoing dir
   CHECKCREDITS: "Outgoing",
   CHEST_REWARD_RESULT: "Incoming",
   CHOOSENAME: "Outgoing",
+  CLAIM_ACCOUNT_LEVEL_REWARD: "Outgoing",  // verified against realmlib incoming/outgoing dir
+  CLAIM_ACCOUNT_LEVEL_REWARD_RESULT: "Incoming",  // verified against realmlib incoming/outgoing dir
   CLAIM_BATTLE_PASS: "Outgoing",
   CLAIM_BP_MILESTONE_RESULT: "Incoming",
   CLAIM_CHEST_REWARD: "Incoming",
+  CLAIM_DAILY_ITEM: "Incoming",  // verified against realmlib incoming/outgoing dir (was Outgoing heuristic)
   CLAIM_LOGIN_REWARD_MSG: "Outgoing",
   CLAIM_MISSION: "Outgoing",
+  CLAIM_MISSION_RESULT: "Incoming",  // verified against realmlib incoming/outgoing dir
+  CLAIM_REWARD: "Outgoing",  // verified against realmlib incoming/outgoing dir
   CLAIM_REWARDS_INFO_PROMPT: "Incoming",
+  CLAIM_REWARDS_INFO_REQUEST: "Outgoing",  // verified against realmlib incoming/outgoing dir
+  CLAIM_REWARD_RESULT: "Incoming",  // verified against realmlib incoming/outgoing dir
   CLIENTSTAT: "Incoming",
   CONVERT_SEASONAL_CHARACTER: "Outgoing",
   CREATE: "Outgoing",
@@ -392,8 +473,10 @@ export const PACKET_DIRECTION: Record<PacketType, "Incoming" | "Outgoing"> = {
   DELETE_PET: "Incoming",
   EDITACCOUNTLIST: "Outgoing",
   EMOTE: "Outgoing",
+  ENCHANT: "Incoming",  // verified against realmlib incoming/outgoing dir
   ENEMYHIT: "Outgoing",
   ENEMYSHOOT: "Incoming",
+  ENTER_ARENA: "Outgoing",  // verified against realmlib incoming/outgoing dir
   ESCAPE: "Outgoing",
   EVOLVE_PET: "Incoming",
   EXALTATION_BONUS_CHANGED: "Incoming",
@@ -414,6 +497,7 @@ export const PACKET_DIRECTION: Record<PacketType, "Incoming" | "Outgoing"> = {
   GUILDRESULT: "Incoming",
   HATCH_PET: "Incoming",
   HELLO: "Outgoing",
+  IMMINENT_ARENA_WAVE: "Incoming",  // verified against realmlib incoming/outgoing dir
   INCOMING_PARTY_INVITE: "Incoming",
   INCOMING_PARTY_MEMBER_INFO: "Incoming",
   INVDROP: "Outgoing",
@@ -456,6 +540,7 @@ export const PACKET_DIRECTION: Record<PacketType, "Incoming" | "Outgoing"> = {
   PLAYER_CALLOUT: "Outgoing",
   PLAYSOUND: "Incoming",
   PONG: "Outgoing",
+  PROGRESS_UPDATE: "Incoming",  // verified against realmlib incoming/outgoing dir
   QUESTOBJID: "Incoming",
   QUEST_FETCH_ASK: "Outgoing",
   QUEST_FETCH_RESPONSE: "Incoming",
@@ -468,19 +553,23 @@ export const PACKET_DIRECTION: Record<PacketType, "Incoming" | "Outgoing"> = {
   REALM_SCORE_UPDATE: "Incoming",
   RECONNECT: "Incoming",
   REDEEM_EXALTATION_REWARD: "Outgoing",
+  REDEEM_VOUCHER: "Outgoing",  // verified against realmlib incoming/outgoing dir
   REQUESTTRADE: "Outgoing",
   REROLL_ALL_ENCHANTMENTS: "Outgoing",
   RESET_DAILY_QUESTS: "Outgoing",
   RESET_ENCHANTMENT_REROLL_COUNT: "Outgoing",
+  RESET_ENCHANTMENT_REROLL_COUNT_RESULT: "Incoming",  // verified against realmlib incoming/outgoing dir
   RESKIN: "Outgoing",
   RESKIN_UNLOCK: "Incoming",
   RETITLE: "Outgoing",
+  SELECT_ENTRANCE: "Outgoing",  // verified against realmlib incoming/outgoing dir
   SERVERPLAYERSHOOT: "Incoming",
   SETCONDITION: "Outgoing",
   SET_ABILITY: "Outgoing",
   SET_DISCOVERABLE: "Outgoing",
   SET_GRAVE_STONE: "Outgoing",
   SET_TRACKED_SEASON: "Outgoing",
+  SHOOTACK: "Outgoing",  // verified against realmlib incoming/outgoing dir
   SHOOT_ACK: "Outgoing",
   SHOWEFFECT: "Incoming",
   SKIN_RECYCLE: "Outgoing",
@@ -499,6 +588,7 @@ export const PACKET_DIRECTION: Record<PacketType, "Incoming" | "Outgoing"> = {
   UNKNOWN165: "Incoming",
   UNKNOWN181: "Incoming",
   UNKNOWN190: "Incoming",
+  UNKNOWN224: "Outgoing",  // verified against realmlib incoming/outgoing dir (was Incoming heuristic)
   UNLOCK_ENCHANTMENT: "Outgoing",
   UNLOCK_ENCHANTMENT_SLOT: "Outgoing",
   UNLOCK_INFORMATION: "Incoming",
@@ -508,6 +598,8 @@ export const PACKET_DIRECTION: Record<PacketType, "Incoming" | "Outgoing"> = {
   UPGRADE_ENCHANTMENT: "Outgoing",
   USEITEM: "Outgoing",
   USEPORTAL: "Outgoing",
+  VAULT_CONTENT: "Incoming",  // verified against realmlib incoming/outgoing dir
   VAULT_UPDATE: "Incoming",
   VERIFY_EMAIL: "Incoming",
+  VOUCHER_RESULT: "Incoming",  // verified against realmlib incoming/outgoing dir
 };
