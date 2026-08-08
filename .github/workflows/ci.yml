@@ -1,0 +1,90 @@
+name: CI
+
+# Lightweight sanity checks for every push to main and every PR.
+#
+# What this DOES cover:
+#   * Locale-independent Windows text parsing — a specific guard for the
+#     anti-patterns that regressed after PR #31 was merged, so the next
+#     non-English-locale user does not have to file the same bug again.
+#     See PR #40 for the story.
+#
+# What this does NOT (yet) cover:
+#   * Building the C++ DLL — needs game-installed IL2CPP headers (see SETUP.md),
+#     not something a public runner can produce.
+#   * Building the Electron installer — needs Windows tooling + code-signing
+#     infra that only makes sense on the release machine.
+#   * TypeScript typechecks — the client currently has ~135 pre-existing errors
+#     in `src/scripts/bridge/*` from an SDK-resolution issue (documented in
+#     PR #31). Once those are cleared, add `tsc --noEmit` jobs here (sdk/ →
+#     client/packages/protocol → client/).
+#   * npm audit — main currently has 5 high/critical CVEs in runtime deps
+#     (`electron-updater`, `ws`, `sharp`, `fast-xml-parser`, `js-yaml`). Once
+#     those are bumped, add an `npm audit --omit=dev --audit-level=high` job
+#     here so new CVEs surface as PR failures.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  locale-guard:
+    name: Locale-independent Windows text parsing guard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check for known localized-text anti-patterns
+        # Any of the four sites fixed by PR #31 creeping back in should fail
+        # CI, not silently ship. Each rule below is keyed on the exact regex
+        # that matched the pre-fix code. If you legitimately need to grep
+        # localized console text, add an inline comment `locale-guard: allow`
+        # on the same line and this check will exempt it.
+        run: |
+          set -eu
+          fail=0
+          hit() {
+            local label="$1"
+            local pattern="$2"
+            local dir="$3"
+            local matches
+            matches=$(grep -RIn --include='*.ts' --include='*.js' --include='*.cjs' --include='*.mjs' \
+              -E "$pattern" "$dir" 2>/dev/null | grep -v 'locale-guard: allow' || true)
+            if [ -n "$matches" ]; then
+              echo ""
+              echo "::error::$label"
+              echo "$matches" | sed 's/^/  /'
+              fail=1
+            fi
+          }
+
+          # PR #31 site 1: DevServer.getRunningProcessCount matched tasklist output
+          # by filtering lines NOT starting with the English "INFO:" prefix, but the
+          # notice is localized. Fix: parse CSV rows structurally.
+          hit "tasklist 'INFO:' prefix filter is localized on non-English Windows" \
+            "startsWith\(['\"]INFO:['\"]\)" client
+
+          # PR #31 site 2: main.cjs getListeningPidsForPort matched netstat state
+          # column against English 'LISTENING' literal. Fix: identify listening
+          # sockets by wildcard foreign endpoint (0.0.0.0:0 / [::]:0).
+          hit "netstat 'LISTENING' state literal is localized on non-English Windows" \
+            "toUpperCase\(\)\s*[!=]==?\s*['\"]LISTENING['\"]" client
+
+          # PR #31 site 3: activatePowerPlan classified powercfg failure by looking
+          # for English 'unable' or Japanese '権限' in stderr. Fix: verify the active
+          # scheme actually changed, then fall back to exit code.
+          hit "powercfg stderr 'unable'/'権限' text classifier is localized" \
+            "\.stderr[^)]*\)\.toLowerCase\(\)\.includes\(['\"]unable['\"]\)" client
+
+          if [ "$fail" -ne 0 ]; then
+            echo ""
+            echo "::error::Locale-guard failed. One of the anti-patterns fixed by PR #31 has returned."
+            echo "See PR #40 for the full story; add an inline 'locale-guard: allow <reason>' comment"
+            echo "on any line that legitimately parses localized console text."
+            exit 1
+          fi
+          echo "Locale-guard OK."
+
