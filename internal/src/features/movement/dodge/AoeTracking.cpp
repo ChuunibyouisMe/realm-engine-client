@@ -10,6 +10,7 @@
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 #include <fstream>
 #include <sstream>
@@ -92,16 +93,17 @@ static constexpr int32_t kSfxType_AoE             = 39;  // Exalt-specific AoE a
 //             H3=FHOHCELBPDO detour never fires or bad origin, H4=FGOFPGIIEPC detour never fires,
 //             H5=CopyActiveForDraw emits few rows or collR stays 0
 //
-// Compiled out in Release. The previous unconditional version opened
-// C:\Users\trump\Desktop\Current\debug-99a079.log on every AoE detour
-// (18 call sites) from the game thread — a hardcoded developer path that
-// fails fast on customer machines but still allocates strings + formats
-// JSON for every AoE in every dungeon.
+// Compiled out in Release. When enabled ({_DEBUG} + non-empty
+// RE_AOE_DEBUG_LOG env var), appends one JSON line per AoE detour to the
+// path in the env var. Historically this used a hardcoded developer path
+// that failed silently on any other machine — the env-var contract lets
+// you keep the log wherever you want without shipping your username.
 static inline void AgentLogAoe(const char* hypothesisId, const char* location, const char* message,
     const std::string& dataJsonObject)
 {
 #ifdef _DEBUG
-    const char* kLogPath = R"(C:\Users\trump\Desktop\Current\debug-99a079.log)";
+    static const char* kLogPath = std::getenv("RE_AOE_DEBUG_LOG");
+    if (!kLogPath || !*kLogPath) return;
     std::ofstream f(kLogPath, std::ios::app | std::ios::binary);
     if (!f)
         return;
