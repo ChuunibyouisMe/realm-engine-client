@@ -4,7 +4,7 @@ Realm Engine is a three-part project:
 
 - **`client/`** — Electron MITM proxy + automation dashboard (TypeScript, `npm`)
 - **`internal/`** — C++ IL2CPP DLL injector, `version.dll` (Visual Studio 2022)
-- **`sdk/`** — `@realmengine/sdk` TypeScript SDK for user-authored plugins
+- **`client/packages/sdk/`** — `@realmengine/sdk` TypeScript SDK for user-authored plugins (docs: [`sdk/README.md`](sdk/README.md))
 
 This document is the pre-flight for contributors. The deep architectural
 notes live next to the code they describe:
@@ -33,9 +33,9 @@ First-time setup:
 2. Follow [`SETUP.md`](SETUP.md) to regenerate the stripped IL2CPP headers
    and download the game XML — these are per-Exalt-build files that are
    not committed.
-3. `cd client && npm install`.
-4. `cd sdk && npm install && npm run build`.
-5. If you're touching native: open `internal/il2cpp-dll-injection.sln`.
+3. `cd client && npm install` (also installs `@realmengine/sdk` from
+   `client/packages/sdk` via the `file:` dependency).
+4. If you're touching native: open `internal/il2cpp-dll-injection.sln`.
 
 Build recipes:
 
@@ -46,9 +46,6 @@ cd client && npm run dev
 # Client (production installer / portable)
 cd client && npm run dist          # both installer + portable
 cd client && npm run dist:portable # portable exe only
-
-# SDK
-cd sdk && npm run build
 
 # Native DLL (Release x64)
 cd internal && msbuild il2cpp-dll-injection.sln \
@@ -66,10 +63,9 @@ Two things need updating in lockstep:
   `node client/scripts/sync-packet-map.mjs <path-to-realmlib/src>` to
   refresh. Full runbook: `internal/docs/UPDATING_AFTER_GAME_PATCH.md`.
 - **IL2CPP offsets** — `internal/src/core/runtime/RuntimeOffsets.cpp`.
-  The table is self-healing (fallbacks + live IL2CPP metadata lookup),
-  so most game patches don't need a code change. When the in-game
-  **Test → OFFSET HEALTH** panel goes yellow/red, that runbook again
-  applies.
+  The offsets are static fallback values (the runtime self-healing /
+  recovery system was removed); after a game patch, refresh them per the
+  runbook when the in-game **Test → OFFSET HEALTH** panel goes yellow/red.
 
 ## Coding style
 
