@@ -230,13 +230,24 @@ HRESULT __stdcall dPresent(IDXGISwapChain* __this, UINT SyncInterval, UINT Flags
 
 		// Render menu when open.
 		if (settings.bShowMenu) {
-			ImGui::SetNextWindowSize(ImVec2(1000, 36), ImGuiCond_Always);
+			// Menu layout — two stacked windows anchored to the top-left of the
+			// game surface. Sizes are fixed to keep the ImGui state deterministic
+			// across resolutions; the tab bar is 36 px tall and the content
+			// panel is 420 x 560 immediately below it.
+			constexpr float kMenuBarWidth   = 1000.0f;
+			constexpr float kMenuBarHeight  =   36.0f;
+			constexpr float kMenuContentW   =  420.0f;
+			constexpr float kMenuContentH   =  560.0f;
+
+			ImGui::SetNextWindowSize(ImVec2(kMenuBarWidth, kMenuBarHeight), ImGuiCond_Always);
 			ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_Always);
 			ImGui::Begin("##MenuBar", nullptr,
 				ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
 				ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar |
 				ImGuiWindowFlags_NoSavedSettings);
 
+			// Tab bar — the order here is the single source of truth for the
+			// tab index used in the switch below. Keep the two in lockstep.
 			static int s_tab = 0;
 			const char* tabs[] = { "World", "Camera", "Player", "Combat", "Visuals", "Test" };
 			for (int i = 0; i < IM_ARRAYSIZE(tabs); i++) {
@@ -245,18 +256,18 @@ HRESULT __stdcall dPresent(IDXGISwapChain* __this, UINT SyncInterval, UINT Flags
 			}
 			ImGui::End();
 
-			ImGui::SetNextWindowSize(ImVec2(420, 560), ImGuiCond_Always);
-			ImGui::SetNextWindowPos(ImVec2(0, 36), ImGuiCond_Always);
+			ImGui::SetNextWindowSize(ImVec2(kMenuContentW, kMenuContentH), ImGuiCond_Always);
+			ImGui::SetNextWindowPos(ImVec2(0, kMenuBarHeight), ImGuiCond_Always);
 			ImGui::Begin("##MenuContent", nullptr,
 				ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
 				ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings);
 			switch (s_tab) {
-				case 0: WorldTAB::Render();  break;
-				case 1: CameraTAB::Render(); break;
-				case 2: PlayerTAB::Render(); break;
-				case 3: CombatTAB::Render(); break;
+				case 0: WorldTAB::Render();   break;
+				case 1: CameraTAB::Render();  break;
+				case 2: PlayerTAB::Render();  break;
+				case 3: CombatTAB::Render();  break;
 				case 4: VisualsTAB::Render(); break;
-				case 5: TestTAB::Render();   break;
+				case 5: TestTAB::Render();    break;
 			}
 			ImGui::End();
 		}

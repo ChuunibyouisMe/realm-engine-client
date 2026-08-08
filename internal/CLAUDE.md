@@ -1,106 +1,226 @@
-# CLAUDE.md
+# CLAUDE.md — realm-engine-client / internal
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Guidance for Claude Code (claude.ai/code) when working in the C++ IL2CPP
+injection layer (`internal/`).
 
-## Project Overview
+## Project overview
 
-This is a C++ DLL injection framework targeting Unity IL2CPP games (specifically Realm of the Mad God Exalt). It is built as a Visual Studio solution (`il2cpp-dll-injection.sln`) and produces `version.dll` — a proxy DLL that hijacks Windows' `version.dll` for auto-loading, or can be injected directly.
+`internal/` is a Visual Studio 2022 C++ project that produces `version.dll` —
+a DLL loaded by RotMG Exalt (either as a proxy for the real Windows
+`version.dll`, or manually injected). Once loaded it hooks IL2CPP methods
+and `IDXGISwapChain::Present` to run the in-game hack overlay and
+autonomy features.
 
-The reference files in `C:\Users\trump\Desktop\Current\` (DIA4A cheat source, Flash client, bot client, dumped assembly listing, research docs) are read-only context for understanding game internals. All active development is in this `C++Scaffolding` directory.
+External reverse-engineering material — Il2CppInspectorPro dumps, notes
+from Flash/bot-client research, decompiled headers — lives under
+`internal/refs/` and is `.gitignore`d. It is read-only reference context;
+active development is entirely in `src/`.
 
-## Building
+## Build
 
-Open `il2cpp-dll-injection.sln` in Visual Studio 2022 (toolset v145). Build targets:
+Open `il2cpp-dll-injection.sln` in Visual Studio 2022 (toolset `v145`).
+The two active configurations are x64:
 
-- **x64 | Debug** — enables `_DEBUG` (spawns a console) and `_VERSION` (proxy DLL mode). Output: `x64/Debug/version.dll`
-- **x64 | Release** — same flags minus `_DEBUG`, with LTCG. Output: `x64/Release/version.dll`
-- **Win32 configs** — injector mode only (no `_VERSION`, no proxy), 32-bit builds for legacy use
+| Configuration | Defines | Output | Use for |
+|---|---|---|---|
+| `x64 \| Debug` | `_DEBUG`, `_VERSION` | `x64/Debug/version.dll` | Local dev — spawns a Win32 console for `std::cout`, `SecurityWatcherThread` is a no-op. |
+| `x64 \| Release` | `_VERSION` (+ LTCG) | `x64/Release/version.dll` | Ship builds — anti-debug active, no console. |
 
-The x64 configs are the ones in active use. MSBuild CLI equivalent:
+The `Win32` configurations exist for legacy manual-injector mode (no
+`_VERSION`, no proxy DLL export) and are not part of the active workflow.
+
+MSBuild CLI equivalent:
+
 ```
 msbuild il2cpp-dll-injection.sln /p:Configuration=Release /p:Platform=x64
 ```
 
-## Key Preprocessor Defines
+`build-and-test.bat` (repo root of `internal/`) is the fast local wrapper.
+
+## Preprocessor defines
 
 | Define | Effect |
-|--------|--------|
-| `_VERSION` | Enables proxy DLL mode: `DllMain` calls `Load()` which forwards all `version.dll` exports to the real system DLL, waits 6 seconds, then calls `Run()` |
-| `_DEBUG` | Opens a Win32 console for `std::cout` log output |
+|---|---|
+| `_VERSION` | Proxy-DLL mode. `DllMain` calls `Load()` which forwards all 17 `version.dll` exports to the real system DLL loaded from `System32`, waits 6 seconds, then runs `Run()`. |
+| `_DEBUG` | Opens a Win32 console for log output and disables `SecurityWatcherThread` (which otherwise unloads the DLL if a debugger / x64dbg / Scylla-hide is detected). |
 
-Without `_VERSION`, `DllMain` calls `Run()` directly (manual injector mode).
+Without `_VERSION`, `DllMain` calls `Run()` directly (manual-injector mode).
 
-## Architecture
+## Source layout
 
-### Startup Flow
+The project is organised by concern under `src/`:
+
+```
+src/
+├── bootstrap/           DllMain, main entry, version.dll proxy exports
+│   ├── dllmain.cpp      DLL entrypoint — dispatches to Load()/Run()
+│   ├── main.cpp/.h      Run() — init_il2cpp → AttachIl2Cpp → DetourInitilization
+│   ├── version.cpp/.h   Proxy stubs for the 17 real version.dll exports (WRAPPER_* macros)
+│
+├── core/                Cross-cutting infrastructure — no game-feature logic here
+│   ├── config/          Persistent settings (settings.h/.cpp) and keybinds (keybinds.h/.cpp)
+│   ├── il2cpp/          PCH (pch-il2cpp.h) + IL2CPP API resolver (il2cpp-init.cpp)
+│   ├── ipc/             Bridge to the Electron client (handshake, framing, JSON, tile state)
+│   ├── logging/         DBG_FILE_LOG macro + Debug console helpers
+│   ├── runtime/         BootGate, DiagBridge, GameState, LocalPlayer,
+│   │                    RuntimeOffsets, SharedMemory, Il2CppResolver
+│   └── security/        xorstr for compile-time string hiding
+│
+├── features/            Feature families — one folder per family
+│   ├── account/         Char select + credential/HWID capture surface
+│   ├── combat/          autoability, autoaim, autonexus, enemytracker, ghostHit
+│   ├── control/         Input-side control logic
+│   ├── loot/            Autoloot rules and inventory automation
+│   ├── misc/            One-offs that don't warrant their own family
+│   ├── movement/        collider, dodge, noclip, pjdodge, repp, speedhack, zdodge
+│   ├── projectiles/     ProjectileStore, ProjectileRuntimeReader, ProjectileTrajectory
+│   ├── runtime/         Feature-runtime plumbing shared by combat/movement tabs
+│   └── visuals/         Cosmetic overlays and tile visualisation
+│
+├── game/                Game-specific data — regenerated per Exalt build
+│   ├── generated/       IL2CPP headers from Il2CppInspectorPro (NOT COMMITTED — see SETUP.md)
+│   ├── math/            Game-math helpers (projectile parity, positional math)
+│   └── symbols/         BeebyteName.h — obfuscated ↔ readable class/field alias map
+│
+├── gui/                 ImGui rendering
+│   └── tabs/            One folder or pair per tab (WorldTAB, CameraTAB, PlayerTAB, CombatTab, VisualsTAB, TestTAB)
+│
+└── platform/            OS / renderer glue
+    ├── dx11/            Dx11 helpers (Dx11.cpp/.h)
+    └── hooks/           InitHooks (Detours+MinHook lifecycle) and DirectX.cpp (dPresent)
+```
+
+Include paths (x64 configs): `src` is the include root — headers are referred
+to by their subpath (e.g. `#include "core/runtime/RuntimeOffsets.h"`,
+`#include "gui/tabs/PlayerTAB.h"`). PCH is `src/core/il2cpp/pch-il2cpp.h`
+(built by `pch-il2cpp.cpp`).
+
+## Startup flow
 
 ```
 DllMain (DLL_PROCESS_ATTACH)
-  └─ [_VERSION] Load()          ← version.cpp: loads real version.dll, waits 6s
-       └─ Run()                 ← user/main.cpp: init + hook entry point
-            ├─ init_il2cpp()    ← resolves IL2CPP API from GameAssembly.dll via GetProcAddress
-            ├─ AttachIl2Cpp()   ← attaches to IL2CPP domain/thread
-            ├─ DetourInitilization() ← hooks IDXGISwapChain::Present
-            └─ UnloadWatcherThread ← waits for hUnloadEvent, then tears down cleanly
+  └─ [_VERSION] Load()                              bootstrap/version.cpp — loads real System32/version.dll, waits 6s
+       └─ Run()                                     bootstrap/main.cpp
+            ├─ (Release) SecurityWatcherThread     unloads if debugger/scylla-hide is present
+            ├─ init_il2cpp(hGameAssembly)          resolves IL2CPP API from GameAssembly.dll
+            ├─ AttachIl2Cpp()                      attaches to IL2CPP domain/thread
+            ├─ DetourInitilization()               installs IDXGISwapChain::Present detour
+            └─ UnloadWatcherThread                 waits on hUnloadEvent, then tears down cleanly
 ```
 
-### Hook Architecture
+## Hook architecture
 
-All hooks are installed/uninstalled through `handlers/hooks/InitHooks.cpp`:
+All hooks are installed / uninstalled through
+`platform/hooks/InitHooks.cpp`:
 
-- **Detours** (MS Detours library, `libraries/detours/`) — used for `IDXGISwapChain::Present` (DXGI hook). This is the render-thread entry point.
-- **MinHook** (`libraries/minhook/`) — used for IL2CPP method hooks (`ProjectileTracking`, `AutoAim`, `AoeTracking`). These install lazily from within `dPresent`/`AutoAim::Tick()` once the game has initialized.
+- **MS Detours** (`vendor/detours/`) — used for `IDXGISwapChain::Present`.
+  This is the render-thread entry point.
+- **MinHook** (`vendor/minhook/`) — used for the IL2CPP method hooks
+  (`ProjectileTracking`, `AutoAim`, `AoeTracking`). These install lazily
+  from `dPresent` / `AutoAim::Tick()` once the game has initialised.
 
-Teardown order in `DetourUninitialization()` is critical:
-1. `DirectX::Shutdown()` — stops ImGui, waits for render semaphore
-2. IL2CPP MinHook uninstalls (AoeTracking → AutoAim → ProjectileTracking)
-3. `MH_DisableHook` / `MH_Uninitialize()`
-4. Detach DXGI Present last
+Teardown order in `DetourUninitialization()` is deliberate:
 
-### Render Loop (`handlers/hooks/DirectX.cpp`)
+1. `DirectX::Shutdown()` — stops ImGui, waits for the render semaphore.
+2. IL2CPP MinHook uninstalls in reverse install order
+   (AoeTracking → AutoAim → ProjectileTracking).
+3. `MH_DisableHook` / `MH_Uninitialize()`.
+4. Detach the DXGI Present detour last.
 
-`dPresent` (the hooked `IDXGISwapChain::Present`) drives everything per frame:
-- First call: initializes ImGui (DX11 + Win32 backends), stores device/context/window, applies theme
-- Every call: runs `AutoAim::Tick()`, then tab `::Tick()` methods, then `Menu::Render()` if open
-- A `HANDLE` semaphore (`hRenderSemaphore`) serializes render calls against shutdown
+## Render loop (`platform/hooks/DirectX.cpp`)
 
-### IL2CPP Interop
+`dPresent` (the hooked `IDXGISwapChain::Present`) drives everything per
+frame:
 
-- `framework/il2cpp-init.cpp` — resolves all IL2CPP API functions from `GameAssembly.dll` at startup using `DO_API` macros expanding over `appdata/il2cpp-api-functions.h`
-- `appdata/` — generated headers (il2cpp types, function pointer tables, app-specific function stubs). These come from IL2CppInspectorPro and are specific to the current game version.
-- `handlers/Il2CppResolver.h/.cpp` — runtime helpers: `Resolver::FindClass`, `Resolver::GetProperty<T>`, `Resolver::SetProperty<T>`, `Resolver::Protection::safe_call` (SEH wrapper), `Resolver::FindObjectsByType`, field value formatting for the inspector UI
+- **First call:** initialises ImGui (DX11 + Win32 backends), stores the
+  device/context/window, applies the theme.
+- **Every call:** runs feature `::Tick(bool menuOpen)` methods, then renders
+  the menu if open.
+- A `HANDLE` semaphore (`hRenderSemaphore`) serialises render calls against
+  shutdown so we never render after teardown starts.
 
-### GUI (`handlers/gui/`)
+Menu layout (two ImGui windows plus a persistent overlay):
 
-Two-window ImGui layout:
-- `##MenuBar` — thin horizontal tab strip (1000×36, top-left)
-- `##MenuContent` — floating content panel (420×560, below bar)
-- Plus a persistent bottom-right "Unload DLL" overlay
+- `##MenuBar` — horizontal tab strip.
+- `##MenuContent` — floating content panel underneath.
+- Persistent bottom-right "Unload DLL" overlay.
 
-Tab index: 0=UnityExplorer, 1=Scanner, 2=World, 3=Camera, 4=Player, 5=Combat, 6=Movement, 7=Test, 8=Debug, 9=Visuals, 10=Settings
+Tab order (single source of truth is the `tabs[]` array in
+`DirectX.cpp::dPresent`):
 
-Tabs with per-frame work implement a `::Tick(bool menuOpen)` called from `dPresent` regardless of whether the menu is visible.
+| Index | Tab | Source |
+|---|---|---|
+| 0 | World | `gui/tabs/WorldTAB.{h,cpp}` |
+| 1 | Camera | `gui/tabs/CameraTAB.{h,cpp}` |
+| 2 | Player | `gui/tabs/PlayerTAB.{h,cpp}` |
+| 3 | Combat | `gui/tabs/CombatTab/CombatTAB.{h,cpp}` |
+| 4 | Visuals | `gui/tabs/VisualsTAB.{h,cpp}` |
+| 5 | Test | `gui/tabs/TestTAB.{h,cpp}` — diagnostics, IL2CPP explorer, offset health |
 
-### Settings (`user/settings.h`, `user/settings.cpp`)
+Tabs that need per-frame work (auto-aim, dodge, projectile tracking, …)
+implement `::Tick(bool menuOpen)` and are called from `dPresent` regardless
+of whether the menu is visible.
 
-Global `settings` instance (extern). Add new feature toggles here. The `KeyBinds::Config` struct (in `handlers/keybinds.h`) holds all keybind VK codes. Menu toggle is `VK_TAB` by default.
+Menu toggle: `VK_TAB` by default. All keybinds live in
+`core/config/keybinds.h` (`KeyBinds::Config` struct).
 
-### Projectile System (`handlers/hooks/ProjectileTracking.cpp`)
+## IL2CPP interop
 
-Implements Flash `Projectile.positionAt` parity for enemy shot prediction. See `docs/AUTODODGE_FLASH_PARITY.md` for the full behavior table. Key points:
-- Wavy, parametric, boomerang, amplitude, turning, and laser shot types are all implemented
-- `ComputePosAt(proj, tMs, x, y)` is the canonical position-at-time API
-- Speed multiplier comes from `GetFlashSpeedMultiplier()` (IL2CPP field `KDAJOMOFMJB` on `HBEAKBIHANL` instances)
-- `BeebyteName.h` maps obfuscated Beebyte class/field names to readable aliases
+- `core/il2cpp/il2cpp-init.cpp` resolves every IL2CPP API function from
+  `GameAssembly.dll` at startup using `DO_API` macros expanding over
+  `game/generated/il2cpp-api-functions.h`.
+- `game/generated/` — Il2CppInspectorPro output specific to the current
+  RotMG Exalt build. **Not committed** — regenerate with the steps in the
+  repo-level `SETUP.md`.
+- `core/runtime/Il2CppResolver.{h,cpp}` — runtime helpers:
+  `Resolver::FindClass`, `GetProperty<T>` / `SetProperty<T>`,
+  `Resolver::Protection::safe_call` (SEH wrapper),
+  `Resolver::FindObjectsByType`, field-value formatting for the inspector UI.
 
-### Proxy DLL (`framework/version.cpp`)
+## Runtime offsets — the piece that breaks on game patches
 
-When `_VERSION` is defined, all 17 `version.dll` exports are forwarded to the real system DLL loaded from `System32`. The `WRAPPER_GENFUNC` / `WRAPPER_FUNC` macros generate the stubs. `definitions/version.def` exports the symbols.
+`core/runtime/RuntimeOffsets.{h,cpp}` is a **table-driven, self-healing
+IL2CPP field-offset registry**. Read that file's top comment for the full
+contract; the summary is:
 
-## Include Paths (x64 configs)
+- Every offset variable is pre-initialised to its last known-good fallback.
+- `EnsureAll()` is called once per frame from `dPresent`. For each entry it
+  looks up the class by BeeByte-obfuscated name, then the field by name,
+  and overwrites the fallback with the live value.
+- If the class or field can't be resolved before a 5-second give-up
+  timeout, the fallback stays in place and the entry is marked stale in
+  the in-game **Test → OFFSET HEALTH** panel (yellow = STALE renamed,
+  red = SUSPECT = read garbage).
+- The BeeByte alias directory that maps obfuscated names to readable ones
+  is `game/symbols/BeebyteName.h` (`Beebyte::GetMap()`).
 
-`appdata`, `framework`, `user`, `handlers`, `libraries` — all relative to project root. The PCH is `framework/pch-il2cpp.h` (created by `framework/pch-il2cpp.cpp`).
+**When the game patches, this table is the first thing to update.** See
+`docs/UPDATING_AFTER_GAME_PATCH.md` for the workflow.
+
+## Projectile system
+
+`features/projectiles/` implements the Flash `Projectile.positionAt` model
+for enemy shot prediction. Key points:
+
+- Wavy, parametric, boomerang, amplitude, turning and laser shot types
+  are all implemented.
+- `ComputePosAt(proj, tMs, x, y)` is the canonical position-at-time API.
+- Speed multiplier comes from `GetFlashSpeedMultiplier()` (IL2CPP field
+  `KDAJOMOFMJB` on `HBEAKBIHANL` projectile instances — see
+  `RuntimeOffsets.h`).
+- Reference implementation for Flash-parity behaviour lives in the
+  Flash client source under `refs/prodmafia/` (specifically
+  `com/company/assembleegameclient/objects/Projectile.as`).
+
+## Proxy DLL (`bootstrap/version.cpp`)
+
+When `_VERSION` is defined, all 17 `version.dll` exports are forwarded to
+the real system DLL loaded from `System32`. The `WRAPPER_GENFUNC` /
+`WRAPPER_FUNC` macros generate the stubs. `defs/version.def` exports the
+symbols.
 
 ## Deployment
 
-Copy `x64/Release/version.dll` to the game's root directory (alongside `GameAssembly.dll`). The proxy intercepts the game's load of `version.dll` and runs `Load()` automatically.
+Copy `x64/Release/version.dll` to the game's root directory (alongside
+`GameAssembly.dll`). The proxy intercepts the game's load of `version.dll`
+and runs `Load()` automatically.
