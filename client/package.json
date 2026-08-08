@@ -29,7 +29,7 @@
     "fast-xml-parser": "^4.3.0",
     "koffi": "^2.9.0",
     "node-addon-api": "^8.7.0",
-    "sharp": "^0.33.5",
+    "sharp": "^0.35.3",
     "ws": "^8.16.0"
   },
   "devDependencies": {
