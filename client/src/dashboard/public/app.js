@@ -15916,7 +15916,7 @@ import { NOISY_PACKETS, MAX_ROWS, MAX_PLUGIN_LOGS, CLASS_NAMES, CLASS_COLORS, SK
       });
   }
 
-  // ── Marketplace Scripts (runtime delivery) ────────────────────────────────
+  // ── Scripts tab (runtime cards) ───────────────────────────────────────────
 
   function normalizeScriptStatus(sc) {
     var st = String(sc && sc.status ? sc.status : 'idle').toLowerCase();

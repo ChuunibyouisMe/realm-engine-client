@@ -69,7 +69,7 @@ Roughly grouped:
 | **Your player** | `Self.getHP()` / `getMaxHP()` / `getPosition()` / `getStats()` / `getExaltedBonuses()` | Auto-nexus thresholds, positional decisions |
 | **The world** | `World.isNexus()` / `isRealm()` / `isDungeon()` / `getName()`, `Tiles`, `Objects`, `Projectiles` | Behavior gated by realm/dungeon; tile queries; enemy shot readback |
 | **Other players** | `Players.nearby()`, `Enemies.nearby()`, `RealmEngine.players.*` | Party awareness, callout logic |
-| **Inventory / vault** | `Inventory`, `Vault`, `inventory.*`, backpack constants | Auto-swap, marketplace bots |
+| **Inventory / vault** | `Inventory`, `Vault`, `inventory.*`, backpack constants | Auto-swap, trading bots |
 | **Combat** | `Combat.aimAt(enemy)` / `aimAtPosition(x,y)` / `useAbility()` / `useAbilityAt(x,y)` / `useAbilityOn(enemy)`, `Projectiles.*` | Auto-ability, custom aim helpers |
 | **Movement** | `Walking.walkTo(x,y)` / `walkToPortal(name)` / `follow` / `flee` / `dodge` / `nexus()` / `teleportToPlayer` | Autopilot, safewalk, quick-travel |
 | **Events** | `events.onMapChanged`, `onEnemySpawned`, `onLevelUp`, `onPlayerNearby`, `onCharacterFameAtLeast`, `onConnected/onDisconnected`, `loot.onBagDropped`, `loot.onRareBagDropped`, … | Reactive triggers |
@@ -202,8 +202,7 @@ If you're an operator building an admin-only bundled plugin instead, use the int
 
 ## Distribution
 
-- **Local install** — drop the `.mjs` into your Realm Engine plugin folder; it hot-reloads.
-- **HWID-bound marketplace scripts** — deliver an AES-256-GCM ciphertext keyed to `(userId, hwid)`; the client's `ScriptDecryptor` will decode and load it on the target machine. See [`client/src/util/ScriptDecryptor.ts`](../client/src/util/ScriptDecryptor.ts) for the threat model (short version: this scheme provides **HWID binding and integrity**, not client-side confidentiality).
+Drop the `.mjs` into your Realm Engine plugin folder; it hot-reloads. Plugins are plain JavaScript files — share them however you like.
 
 ---
 
