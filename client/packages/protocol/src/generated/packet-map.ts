@@ -404,12 +404,15 @@ export const PacketAlias = {
   CHANGE_ALLY_SHOOT: PacketType.CHANGE_ALLYSHOOT,
 } as const;
 
-// Direction is not encoded in the wire protocol. Existing values preserved from
-// the prior REC map; new entries from realmlib are heuristically seeded and marked
-// with a "NEW — verify" comment. Verify each before relying on it.
+// Direction is not encoded in the wire protocol. Existing values are preserved
+// from the prior REC map; new entries from realmlib are annotated with the
+// evidence source in a trailing comment ("verified against realmlib
+// incoming/outgoing dir" — cross-checked by matching each name to the
+// corresponding *-packet.ts file under `packets/incoming/` or
+// `packets/outgoing/` in the upstream realmlib checkout).
 export const PACKET_DIRECTION: Record<PacketType, "Incoming" | "Outgoing"> = {
   ACCEPTTRADE: "Outgoing",
-  ACCEPT_ARENA_DEATH: "Outgoing",  // NEW — verify
+  ACCEPT_ARENA_DEATH: "Outgoing",  // verified against realmlib incoming/outgoing dir
   ACCOUNTLIST: "Incoming",
   ACTIVATE_CRUCIBLE: "Outgoing",
   ACTIVEPETUPDATE: "Incoming",
@@ -418,9 +421,9 @@ export const PACKET_DIRECTION: Record<PacketType, "Incoming" | "Outgoing"> = {
   AOE: "Incoming",
   AOEACK: "Outgoing",
   APPLY_ENCHANTMENT: "Outgoing",
-  ARENA_DEATH: "Incoming",  // NEW — verify
-  BLACKSMITH_DISMANTLE: "Outgoing",  // NEW — verify
-  BLACKSMITH_REQUEST: "Outgoing",  // NEW — verify
+  ARENA_DEATH: "Incoming",  // verified against realmlib incoming/outgoing dir
+  BLACKSMITH_DISMANTLE: "Incoming",  // verified against realmlib incoming/outgoing dir (was Outgoing heuristic)
+  BLACKSMITH_REQUEST: "Outgoing",  // verified against realmlib incoming/outgoing dir
   BOOST_BP_MILESTONE: "Outgoing",
   BUY: "Outgoing",
   BUYRESULT: "Incoming",
@@ -431,25 +434,25 @@ export const PACKET_DIRECTION: Record<PacketType, "Incoming" | "Outgoing"> = {
   CHANGEGUILDRANK: "Outgoing",
   CHANGETRADE: "Outgoing",
   CHANGE_ALLYSHOOT: "Outgoing",
-  CHANGE_ALLY_SHOOT: "Incoming",  // NEW — verify
-  CHATHELLO: "Incoming",  // NEW — verify
-  CHATTOKEN: "Incoming",  // NEW — verify
+  CHANGE_ALLY_SHOOT: "Outgoing",  // verified against realmlib incoming/outgoing dir (was Incoming heuristic)
+  CHATHELLO: "Outgoing",  // verified against realmlib incoming/outgoing dir (was Incoming heuristic)
+  CHATTOKEN: "Incoming",  // verified against realmlib incoming/outgoing dir
   CHECKCREDITS: "Outgoing",
   CHEST_REWARD_RESULT: "Incoming",
   CHOOSENAME: "Outgoing",
-  CLAIM_ACCOUNT_LEVEL_REWARD: "Outgoing",  // NEW — verify
-  CLAIM_ACCOUNT_LEVEL_REWARD_RESULT: "Incoming",  // NEW — verify
+  CLAIM_ACCOUNT_LEVEL_REWARD: "Outgoing",  // verified against realmlib incoming/outgoing dir
+  CLAIM_ACCOUNT_LEVEL_REWARD_RESULT: "Incoming",  // verified against realmlib incoming/outgoing dir
   CLAIM_BATTLE_PASS: "Outgoing",
   CLAIM_BP_MILESTONE_RESULT: "Incoming",
   CLAIM_CHEST_REWARD: "Incoming",
-  CLAIM_DAILY_ITEM: "Outgoing",  // NEW — verify
+  CLAIM_DAILY_ITEM: "Incoming",  // verified against realmlib incoming/outgoing dir (was Outgoing heuristic)
   CLAIM_LOGIN_REWARD_MSG: "Outgoing",
   CLAIM_MISSION: "Outgoing",
-  CLAIM_MISSION_RESULT: "Incoming",  // NEW — verify
-  CLAIM_REWARD: "Outgoing",  // NEW — verify
+  CLAIM_MISSION_RESULT: "Incoming",  // verified against realmlib incoming/outgoing dir
+  CLAIM_REWARD: "Outgoing",  // verified against realmlib incoming/outgoing dir
   CLAIM_REWARDS_INFO_PROMPT: "Incoming",
-  CLAIM_REWARDS_INFO_REQUEST: "Outgoing",  // NEW — verify
-  CLAIM_REWARD_RESULT: "Incoming",  // NEW — verify
+  CLAIM_REWARDS_INFO_REQUEST: "Outgoing",  // verified against realmlib incoming/outgoing dir
+  CLAIM_REWARD_RESULT: "Incoming",  // verified against realmlib incoming/outgoing dir
   CLIENTSTAT: "Incoming",
   CONVERT_SEASONAL_CHARACTER: "Outgoing",
   CREATE: "Outgoing",
@@ -470,10 +473,10 @@ export const PACKET_DIRECTION: Record<PacketType, "Incoming" | "Outgoing"> = {
   DELETE_PET: "Incoming",
   EDITACCOUNTLIST: "Outgoing",
   EMOTE: "Outgoing",
-  ENCHANT: "Incoming",  // NEW — verify
+  ENCHANT: "Incoming",  // verified against realmlib incoming/outgoing dir
   ENEMYHIT: "Outgoing",
   ENEMYSHOOT: "Incoming",
-  ENTER_ARENA: "Outgoing",  // NEW — verify
+  ENTER_ARENA: "Outgoing",  // verified against realmlib incoming/outgoing dir
   ESCAPE: "Outgoing",
   EVOLVE_PET: "Incoming",
   EXALTATION_BONUS_CHANGED: "Incoming",
@@ -494,7 +497,7 @@ export const PACKET_DIRECTION: Record<PacketType, "Incoming" | "Outgoing"> = {
   GUILDRESULT: "Incoming",
   HATCH_PET: "Incoming",
   HELLO: "Outgoing",
-  IMMINENT_ARENA_WAVE: "Incoming",  // NEW — verify
+  IMMINENT_ARENA_WAVE: "Incoming",  // verified against realmlib incoming/outgoing dir
   INCOMING_PARTY_INVITE: "Incoming",
   INCOMING_PARTY_MEMBER_INFO: "Incoming",
   INVDROP: "Outgoing",
@@ -537,7 +540,7 @@ export const PACKET_DIRECTION: Record<PacketType, "Incoming" | "Outgoing"> = {
   PLAYER_CALLOUT: "Outgoing",
   PLAYSOUND: "Incoming",
   PONG: "Outgoing",
-  PROGRESS_UPDATE: "Incoming",  // NEW — verify
+  PROGRESS_UPDATE: "Incoming",  // verified against realmlib incoming/outgoing dir
   QUESTOBJID: "Incoming",
   QUEST_FETCH_ASK: "Outgoing",
   QUEST_FETCH_RESPONSE: "Incoming",
@@ -550,23 +553,23 @@ export const PACKET_DIRECTION: Record<PacketType, "Incoming" | "Outgoing"> = {
   REALM_SCORE_UPDATE: "Incoming",
   RECONNECT: "Incoming",
   REDEEM_EXALTATION_REWARD: "Outgoing",
-  REDEEM_VOUCHER: "Outgoing",  // NEW — verify
+  REDEEM_VOUCHER: "Outgoing",  // verified against realmlib incoming/outgoing dir
   REQUESTTRADE: "Outgoing",
   REROLL_ALL_ENCHANTMENTS: "Outgoing",
   RESET_DAILY_QUESTS: "Outgoing",
   RESET_ENCHANTMENT_REROLL_COUNT: "Outgoing",
-  RESET_ENCHANTMENT_REROLL_COUNT_RESULT: "Incoming",  // NEW — verify
+  RESET_ENCHANTMENT_REROLL_COUNT_RESULT: "Incoming",  // verified against realmlib incoming/outgoing dir
   RESKIN: "Outgoing",
   RESKIN_UNLOCK: "Incoming",
   RETITLE: "Outgoing",
-  SELECT_ENTRANCE: "Outgoing",  // NEW — verify
+  SELECT_ENTRANCE: "Outgoing",  // verified against realmlib incoming/outgoing dir
   SERVERPLAYERSHOOT: "Incoming",
   SETCONDITION: "Outgoing",
   SET_ABILITY: "Outgoing",
   SET_DISCOVERABLE: "Outgoing",
   SET_GRAVE_STONE: "Outgoing",
   SET_TRACKED_SEASON: "Outgoing",
-  SHOOTACK: "Outgoing",  // NEW — verify
+  SHOOTACK: "Outgoing",  // verified against realmlib incoming/outgoing dir
   SHOOT_ACK: "Outgoing",
   SHOWEFFECT: "Incoming",
   SKIN_RECYCLE: "Outgoing",
@@ -585,7 +588,7 @@ export const PACKET_DIRECTION: Record<PacketType, "Incoming" | "Outgoing"> = {
   UNKNOWN165: "Incoming",
   UNKNOWN181: "Incoming",
   UNKNOWN190: "Incoming",
-  UNKNOWN224: "Incoming",  // NEW — verify
+  UNKNOWN224: "Outgoing",  // verified against realmlib incoming/outgoing dir (was Incoming heuristic)
   UNLOCK_ENCHANTMENT: "Outgoing",
   UNLOCK_ENCHANTMENT_SLOT: "Outgoing",
   UNLOCK_INFORMATION: "Incoming",
@@ -595,8 +598,8 @@ export const PACKET_DIRECTION: Record<PacketType, "Incoming" | "Outgoing"> = {
   UPGRADE_ENCHANTMENT: "Outgoing",
   USEITEM: "Outgoing",
   USEPORTAL: "Outgoing",
-  VAULT_CONTENT: "Incoming",  // NEW — verify
+  VAULT_CONTENT: "Incoming",  // verified against realmlib incoming/outgoing dir
   VAULT_UPDATE: "Incoming",
   VERIFY_EMAIL: "Incoming",
-  VOUCHER_RESULT: "Incoming",  // NEW — verify
+  VOUCHER_RESULT: "Incoming",  // verified against realmlib incoming/outgoing dir
 };
