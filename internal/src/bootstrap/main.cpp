@@ -12,6 +12,7 @@
 #include "InitHooks.h"
 #include "IpcBridge.h"
 #include "DbgFileLog.h"
+#include "CrashProbe.h"
 
 HMODULE hModule;
 HANDLE hUnloadEvent;
@@ -76,6 +77,10 @@ void Run(LPVOID lpParam)
  SetConsoleTitleA("Debug Console");
 #endif
  DBG_FILE_LOG("[Run] Entered. Log path: " << DbgFileLogPath());
+
+ // Install crash logging as early as possible so any fatal fault (feature hook
+ // misfire, stale offset misread) records module+offset+backtrace to the trace log.
+ crashprobe::InstallCrashProbe();
 
 #if !defined(_DEBUG)
  if (IsDebuggerDetected() || HasAnalysisModulesLoaded()) return;

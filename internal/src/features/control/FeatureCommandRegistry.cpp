@@ -110,6 +110,7 @@ namespace {
             FH_FLOAT("colliderMultiplier", PlayerCollider::SetMultiplier),
             FH("clientDefense", FeatureState::SetClientDefense(static_cast<int32_t>(f.Int()))),
             FH("clientClassType", FeatureState::SetClientClassType(static_cast<int32_t>(f.Int()))),
+            FH("clientSpeed", FeatureState::SetClientSpeed(static_cast<int32_t>(f.Int()))),
             FH_INT("autoDodgeMode", IpcBridge_SetAutoDodgeMode),
             FH_FLOAT("autoDodgeHorizonMs", IpcBridge_SetAutoDodgeHorizonMs),
             FH_FLOAT("autoDodgeHitboxPadding", IpcBridge_SetAutoDodgeHitboxPadding),

@@ -1,6 +1,7 @@
 #include "pch-il2cpp.h"
 #include "DangerPlanner.h"
 #include "DodgeGeometry.h"
+#include "MovementRuntime.h"
 #include "XDodge.h"
 #include "RolloutDodge.h"
 #include "ZDodge.h"
@@ -191,11 +192,29 @@ float GetMoveSpeedMul(void* player)
 
 bool CallMoveTo(void* player, float x, float y)
 {
-    if (!s_fnMoveTo || !player) return false;
-    bool ok = false;
-    __try { ok = s_fnMoveTo(player, x, y, nullptr); }
-    __except (EXCEPTION_EXECUTE_HANDLER) { ok = false; }
-    return ok;
+    if (!player) return false;
+    // One-shot probe: log the ACTUAL runtime class of the player object.
+    // DGLCONCOIBO (MoveTo) is virtual; DodgeRuntime::CallMoveTo re-dispatches
+    // through the object's vtable, and this line confirms what class it saw.
+    static volatile LONG s_logN = 0;
+    if (InterlockedIncrement(&s_logN) == 1) {
+        __try {
+            Il2CppClass* c = il2cpp_object_get_class(reinterpret_cast<Il2CppObject*>(player));
+            const char* cn = c ? il2cpp_class_get_name(c) : "(nullcls)";
+            const char* ns = c ? il2cpp_class_get_namespace(c) : "";
+            char buf[256];
+            snprintf(buf, sizeof(buf),
+                     "[Dodge] CallMoveTo: live player class = %s::%s",
+                     (ns && *ns) ? ns : "<g>", cn ? cn : "?");
+            DbgFileLogWrite(buf);
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            DbgFileLogWrite("[Dodge] CallMoveTo: class lookup faulted");
+        }
+    }
+    // Single MoveTo path for all dodge engines: virtual-dispatch aware,
+    // SEH-guarded, resolved by name (see MovementRuntime.cpp).
+    DodgeRuntime::EnsureResolved();
+    return DodgeRuntime::CallMoveTo(player, x, y);
 }
 
 // (Removed) InjectMoveInput — writing MoveDirX/Y/Moving does nothing
@@ -708,10 +727,12 @@ UpdateFn s_origUpdate = nullptr;
 void*    s_hookTarget = nullptr;
 bool     s_hookInstalled = false;
 
-void __fastcall Detour_AppEngineUpdate(void* __this, void* method)
+// Dodge sensor/planner work for one frame. Extracted from the detour so the
+// detour can run it under SEH (see DodgeTickGuarded) without tripping C2712 —
+// this body legitimately holds C++ temporaries (ostringstream via DBG_FILE_LOG),
+// which a __try scope in the same function cannot unwind.
+static void RunDodgeTickBody()
 {
-    if (s_origUpdate) s_origUpdate(__this, method);
-
     // Two dodge engines run from this hook (mutually exclusive): XDodge
     // (spacetime BFS/A*) and RolloutDodge (forward input-simulation). They
     // share the preamble, goal plumbing, and GhostHit safety net below.
@@ -773,6 +794,29 @@ void __fastcall Detour_AppEngineUpdate(void* __this, void* method)
         GhostHit::Tick(p, px, py);
         return;
     }
+}
+
+// SEH firewall around the dodge frame. A stale-offset sensor read (documented
+// in the body above) or any other fault inside dodge must not take down the
+// game process: swallow it, log once per ~240 frames, and let the game keep
+// running. The __except handler uses only the plain DbgFileLogWrite (no C++
+// temporaries) so this function has nothing to unwind (avoids C2712).
+static void DodgeTickGuarded()
+{
+    __try {
+        RunDodgeTickBody();
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        static volatile LONG s_ex = 0;
+        if ((InterlockedIncrement(&s_ex) % 240) == 1)
+            DbgFileLogWrite("[Dodge] detour: SEH caught a fault in dodge tick — "
+                            "frame skipped (stale entity/projectile offset?)");
+    }
+}
+
+void __fastcall Detour_AppEngineUpdate(void* __this, void* method)
+{
+    if (s_origUpdate) s_origUpdate(__this, method);
+    DodgeTickGuarded();
 }
 
 } // namespace

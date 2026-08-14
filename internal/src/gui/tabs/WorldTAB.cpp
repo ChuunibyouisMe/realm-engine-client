@@ -2391,7 +2391,15 @@ namespace WorldTAB {
     using SquareLookupFn = void* (__fastcall*)(void* map, int tx, int ty, void* methodInfo);
     static SquareLookupFn s_squareLookup = nullptr;
     static bool s_liveHazResolved = false;
-    static bool s_liveHazOk = true;
+    // DISABLED: kSquareLookupRva below is a hardcoded, reverse-engineered address
+    // that is game-version-specific. On the current build it is STALE (RVAs shifted)
+    // and points into the wrong function; calling it corrupts the stack, which the
+    // QuerySquareHazard __except CANNOT catch (unwind-unhandleable) — so the 8-fail
+    // self-disable never triggers and the process hard-crashes instead. Default OFF
+    // so we always use the cached IsDamagingTile fallback (the comment below calls it
+    // "== current behaviour"). Re-enable only after re-deriving kSquareLookupRva +
+    // kSquareDamageOff/kSquareCoverOff for the running build via disassembly.
+    static bool s_liveHazOk = false;
     static int  s_liveHazFails = 0;
     static constexpr uintptr_t kSquareLookupRva = 0x1CA7B60;
     static constexpr uint32_t  kSquareDamageOff = 0x58;   // i32 ground damage
