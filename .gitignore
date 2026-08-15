@@ -10,3 +10,7 @@ internal/src/game/generated/
 client/data/objects.xml
 client/data/tiles.xml
 internal/data/objects.xml
+
+# ── Local tooling ──
+/tools/
+/.idea/

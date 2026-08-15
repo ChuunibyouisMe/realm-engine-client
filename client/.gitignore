@@ -149,9 +149,23 @@ run-electron.bat
 # Mirror-fetched RotMG XML (run: npm run download-game-xml)
 data/equip.xml
 data/enchantments.xml
+data/enchantmentLists.xml
+data/enchanterSettings.xml
 
 # RotMGAssetExtractor dump (spritesheet.xml + images/); copy locally — large binaries
 data/rotmg-extractor-game/
+data/spritesheet.xml
+data/images/
+
+data/.local-build-hash
+
+/release/
+
+winhttp-proxy/*.dll
+winhttp-proxy/*.exp
+winhttp-proxy/*.lib
+winhttp-proxy/*.pdb
+winhttp-proxy/*.obj
 
 # Excluded from remote (per project policy)
 README.md
