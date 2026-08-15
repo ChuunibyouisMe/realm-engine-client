@@ -21,6 +21,10 @@ namespace CameraTAB {
     // Centering state (IOABMGFJLLP) — live, re-read every frame in Render().
     // true = camera NOT centred on player; false = following player (default).
     bool  GetCenteringState();
+
+    float GetCamWorldX();
+    float GetCamWorldY();
+
     void  SetZoomValue(float zoom);
     void  SetAngleDegrees(int angleDeg);
     void  SetCenteredOnPlayer(bool centered);

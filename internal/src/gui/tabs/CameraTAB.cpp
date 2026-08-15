@@ -664,6 +664,8 @@ namespace CameraTAB {
     float GetPixelRectW()    { return g_pixelRectW; }
     float GetPixelRectH()    { return g_pixelRectH; }
     bool  GetCenteringState(){ return g_offsetMode; }
+    float GetCamWorldX()     { return g_posX; }
+    float GetCamWorldY()     { return g_posY; }
     void  SetZoomValue(float zoom)
     {
         // Always apply — the cached g_zoom may be stale if DoRefresh() hasn't run.
