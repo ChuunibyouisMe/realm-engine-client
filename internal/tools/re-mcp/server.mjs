@@ -22,6 +22,11 @@ import readline from 'node:readline';
 // ── locate the diag directory ────────────────────────────────────────────────
 function resolveDiagDir() {
   if (process.env.RE_DIAG_DIR) return process.env.RE_DIAG_DIR;
+
+  if (process.platform === 'win32' && process.env.LOCALAPPDATA) {
+    return join(process.env.LOCALAPPDATA, 'RealmEngine');
+  }
+
   try {
     const winLocal = execSync('cmd.exe /c echo %LOCALAPPDATA%', { encoding: 'utf8' }).trim();
     if (winLocal && winLocal !== '%LOCALAPPDATA%') {
@@ -29,7 +34,8 @@ function resolveDiagDir() {
       return join(unix, 'RealmEngine');
     }
   } catch { /* fall through */ }
-  return '/mnt/c/Users/Jesse/AppData/Local/RealmEngine';
+
+  return '/mnt/c/Users/________/AppData/Local/RealmEngine';
 }
 const DIAG_DIR  = resolveDiagDir();
 const DIAG_FILE   = join(DIAG_DIR, 'diag.json');
