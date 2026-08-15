@@ -50,6 +50,17 @@ static float g_mouseWorldX  = 0.f, g_mouseWorldY  = 0.f;
 static float g_mouseSX      = 0.f, g_mouseSY      = 0.f;
 static bool  g_w2sValid     = false;
 
+static bool  g_basisMeasured = false;
+static bool  g_useMeasuredBasis = true;
+// Readout values
+static float g_dbgCx = 0.f, g_dbgCy = 0.f, g_dbgZoom = 0.f, g_dbgAngleRad = 0.f;
+static float g_dbgPlayerX = 0.f,  g_dbgPlayerY = 0.f;
+static float g_dbgCamTileX = 0.f, g_dbgCamTileY = 0.f;
+
+static float g_basisAgeMs = -1.f;
+static bool  g_basisFull = false;
+static float g_basisResidual = -1.f;
+
 // Auto-refresh for World + Camera tabs
 static float g_refreshTimer    = 0.f;
 static float g_refreshInterval = 0.1f;  // 100 ms
@@ -287,6 +298,9 @@ static bool BuildCamState(float& camX,    float& camY,
 {
     // Live read every frame (Walk To, Follow Mouse, S2W all share this anchor).
     ReadLivePlayerXY(camX, camY);
+    
+    g_dbgPlayerX = camX;
+    g_dbgPlayerY = camY;
 
     float angleDeg = CameraTAB::GetAngle();
     float ortho    = CameraTAB::GetZoom();
@@ -302,29 +316,86 @@ static bool BuildCamState(float& camX,    float& camY,
     screenH = static_cast<float>(r.bottom - r.top);
     if (screenW <= 0.f || screenH <= 0.f) return false;
 
-    // ── Use Camera.pixelRect for the viewport centre ──────────────────────────
-    // Unity Camera.pixelRect tells us exactly which portion of the screen the
-    // game renders to (excluding any UI overlay panels).
-    // Layout: x = left edge, y = bottom edge (Unity Y-up), w/h = extent.
-    // Screen-space centre (Y-down):
-    //   cx = pixelRectX + pixelRectW / 2
-    //   cy = screenH - (pixelRectY + pixelRectH / 2)
-    // Zoom uses viewport height, not full screen height.
-    float prX = CameraTAB::GetPixelRectX();
-    float prY = CameraTAB::GetPixelRectY();
-    float prW = CameraTAB::GetPixelRectW();
-    float prH = CameraTAB::GetPixelRectH();
-
-    if (prW > 16.f && prH > 16.f) {
-        cx   = prX + prW * 0.5f;
-        cy   = screenH - (prY + prH * 0.5f);
-        zoom = prH / (2.f * ortho);
-    } else {
-        // Fallback while CameraTAB hasn't refreshed yet
-        cx   = screenW * 0.5f;
-        cy   = screenH * 0.5f;
-        zoom = screenH / (2.f * ortho);
+    // This is the old (and worse) version that's just computed as a fallback.
+    //
+    // Unity Camera.pixelRect tells us which portion of the screen the game
+    // renders to (excluding UI overlay panels). Layout: x = left edge,
+    // y = bottom edge (Unity Y-up), w/h = extent. Zoom uses viewport height,
+    // not full screen height.
+    {
+        const float prX = CameraTAB::GetPixelRectX();
+        const float prY = CameraTAB::GetPixelRectY();
+        const float prW = CameraTAB::GetPixelRectW();
+        const float prH = CameraTAB::GetPixelRectH();
+        if (prW > 16.f && prH > 16.f) {
+            cx   = prX + prW * 0.5f;
+            cy   = screenH - (prY + prH * 0.5f);
+            zoom = prH / (2.f * ortho);
+        } else {
+            // Fallback while CameraTAB hasn't refreshed yet
+            cx   = screenW * 0.5f;
+            cy   = screenH * 0.5f;
+            zoom = screenH / (2.f * ortho);
+        }
     }
+
+    // This is the actually good way of getting the basis using the player's position.
+    // We use the player's position, and the position 1 to the left / right / up / down
+    // to get the basis for the camera. 
+    if (g_useMeasuredBasis) {
+        static CameraTAB::ScreenBasis s_basis{};
+        static ULONGLONG s_lastRefineMs = 0;
+        static ULONGLONG s_lastGoodMs   = 0;
+        constexpr ULONGLONG kRefineEveryMs = 100;
+        constexpr ULONGLONG kBasisMaxAgeMs = 1000;
+
+        const ULONGLONG nowMs = GetTickCount64();
+        
+        const bool refine = (nowMs - s_lastRefineMs) >= kRefineEveryMs;
+        CameraTAB::ScreenBasis fresh{};
+        if (CameraTAB::CalibrateScreenBasis(WorldTAB::GetLocalPtr(), screenW, screenH, fresh, refine)) {
+            s_basis.anchorTileX   = fresh.anchorTileX;
+            s_basis.anchorTileY   = fresh.anchorTileY;
+            s_basis.anchorScreenX = fresh.anchorScreenX;
+            s_basis.anchorScreenY = fresh.anchorScreenY;
+            s_basis.hasAnchor     = fresh.hasAnchor;
+            s_lastGoodMs          = nowMs;
+            
+            if (fresh.hasScaleAndRotation) {
+                s_basis.pixelsPerTile       = fresh.pixelsPerTile;
+                s_basis.rotationRad         = fresh.rotationRad;
+                s_basis.fitResidualPx       = fresh.fitResidualPx;
+                s_basis.hasScaleAndRotation = true;
+                s_lastRefineMs              = nowMs;
+            }
+        } else if (refine) {
+            s_lastRefineMs = nowMs;
+            CameraTAB::ForceRefresh();
+        }
+        g_basisAgeMs    = (s_lastGoodMs != 0) ? static_cast<float>(nowMs - s_lastGoodMs) : -1.f;
+        g_basisResidual = s_basis.fitResidualPx;
+
+        if (s_lastGoodMs != 0 && (nowMs - s_lastGoodMs) <= kBasisMaxAgeMs && s_basis.hasAnchor) {
+            camX = s_basis.anchorTileX;
+            camY = s_basis.anchorTileY;
+            cx   = s_basis.anchorScreenX;
+            cy   = s_basis.anchorScreenY;
+            
+            if (s_basis.hasScaleAndRotation) {
+                angleRad = s_basis.rotationRad;
+                zoom     = s_basis.pixelsPerTile;
+            }
+            g_basisMeasured = true;
+            g_basisFull     = s_basis.hasScaleAndRotation;
+            
+            return true;
+        }
+        g_basisMeasured = false;
+        g_basisFull     = false;
+    }
+
+    g_dbgCamTileX = CameraTAB::GetCamWorldX();
+    g_dbgCamTileY = -CameraTAB::GetCamWorldY();
 
     return (camX != 0.f || camY != 0.f);
 }
@@ -617,8 +688,10 @@ void TestTAB::Tick(bool menuVisible)
     }
 
     // ── Build camera/screen state for this frame ─────────────────────────────
-    float camX, camY, angleRad, zoom, cx, cy, screenW, screenH;
+    float camX = 0.f, camY = 0.f, angleRad = 0.f, zoom = 0.f;
+    float cx = 0.f, cy = 0.f, screenW = 0.f, screenH = 0.f;
     g_w2sValid = BuildCamState(camX, camY, angleRad, zoom, cx, cy, screenW, screenH);
+    g_dbgCx = cx; g_dbgCy = cy; g_dbgZoom = zoom; g_dbgAngleRad = angleRad;
 
     // ── Mouse position (screen coords, relative to game client area) ────────
     POINT pt;
@@ -1165,6 +1238,42 @@ void TestTAB::Render()
     ImGui::TextDisabled("%s", settings.bEnableDiagBridge
         ? "Writing %LOCALAPPDATA%\\RealmEngine\\{diag,cmd,resp}.json (~1 Hz)."
         : "Off — no files written. Enable to use the re_* MCP tools.");
+
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    // Debug Overlay
+    ImGui::TextColored(ImVec4(0.55f, 0.85f, 1.f, 1.f), "OVERLAY PROJECTION");
+    ImGui::Checkbox("Measured Unity basis##w2sbasis", &g_useMeasuredBasis);
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("%s",
+            "ON (default) = ask Unity where the player actually is. The only\n"
+            "projection that is correct when the camera is not centred.\n"
+            "OFF = pixelRect estimate, the projection every overlay used before\n"
+            "the camera work. Turn off if the game misbehaves — the measured\n"
+            "path calls managed Unity code from the render thread.");
+    if (!g_w2sValid) {
+        ImGui::TextColored(ImVec4(1.f, 0.45f, 0.2f, 1.f),
+            "INVALID — no overlay is drawn this frame (no local player / no window).");
+    } else if (g_basisMeasured) {
+        ImGui::TextColored(ImVec4(0.5f, 1.f, 0.6f, 1.f),
+            g_basisFull ? "Measured: anchor + zoom/angle (last good %.0f ms ago)"
+                        : "Measured: anchor only, zoom/angle estimated (%.0f ms ago)",
+            g_basisAgeMs);
+        if (g_basisResidual >= 0.f)
+            ImGui::TextDisabled("model fit residual: %.3f px/unit%s", g_basisResidual,
+                g_basisResidual > 1.f ? "  (high — projection may skew)" : "");
+    } else {
+        ImGui::TextColored(ImVec4(1.f, 0.85f, 0.35f, 1.f),
+            "Fallback (pixelRect estimate) — calibration rejected or camera unresolved");
+    }
+    ImGui::TextDisabled("centre (%.0f, %.0f)  zoom %.2f px/tile  angle %.1f deg",
+        g_dbgCx, g_dbgCy, g_dbgZoom, g_dbgAngleRad * (180.f / kPI));
+    ImGui::TextDisabled("player (%.2f, %.2f)   camera->tile (%.2f, %.2f)",
+        g_dbgPlayerX, g_dbgPlayerY, g_dbgCamTileX, g_dbgCamTileY);
+    ImGui::TextDisabled("%s", "While centred these two should match; a mismatch means the\n"
+                              "camera->tile mapping is wrong, not the offset handling.");
 
     ImGui::Spacing();
     ImGui::Separator();
