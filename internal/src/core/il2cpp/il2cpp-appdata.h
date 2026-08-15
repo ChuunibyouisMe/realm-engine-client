@@ -8,9 +8,8 @@
       // Application-specific types
       #include "il2cpp-types.h"
 
-      // Missing typedefs not emitted by Il2CppInspector for this Unity version
-      typedef uint32_t Il2CppGCHandle;             // GC handle is a uint32 token
-      typedef void (*Il2CppAndroidUpStateFunc)(bool); // Android network state callback
+      // (Il2CppGCHandle / Il2CppAndroidUpStateFunc are now emitted by the
+      // regenerated il2cpp-types.h — manual typedefs removed to avoid redefinition.)
 
       // IL2CPP APIs
       #define DO_API(r, n, p) extern r (*n) p

@@ -117,6 +117,12 @@ export function register(ctx: PluginContext) {
     if (!posTimer && tryOpenTelemetry()) startPosPoll();
     sendDllFeature('clientDefense', def);
     sendDllFeature('clientClassType', cls);
+    // Server-authoritative SPD (base + bonus) for the DLL's dodge move budget.
+    // The in-DLL SPD read broke on the 2026-08 layout shift; this is name/offset
+    // independent. Clamped to a sane range so a transient bad tick can't poison it.
+    const spd = pd.speed + pd.speedBonus;
+    if (Number.isFinite(spd) && spd >= 0 && spd <= 200)
+      sendDllFeature('clientSpeed', spd | 0);
   });
 
   function syncFilterState() {

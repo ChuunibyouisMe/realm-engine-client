@@ -102,6 +102,7 @@ static inline void AgentLogAoe(const char* hypothesisId, const char* location, c
     const std::string& dataJsonObject)
 {
 #ifdef _DEBUG
+#pragma warning(suppress:4996)   // getenv is fine here; Debug SDL checks flag it as C4996
     static const char* kLogPath = std::getenv("RE_AOE_DEBUG_LOG");
     if (!kLogPath || !*kLogPath) return;
     std::ofstream f(kLogPath, std::ios::app | std::ios::binary);
