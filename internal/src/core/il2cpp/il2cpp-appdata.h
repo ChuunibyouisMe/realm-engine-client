@@ -8,6 +8,9 @@
       // Application-specific types
       #include "il2cpp-types.h"
 
+      // (Il2CppGCHandle / Il2CppAndroidUpStateFunc are now emitted by the
+      // regenerated il2cpp-types.h — manual typedefs removed to avoid redefinition.)
+
       // IL2CPP APIs
       #define DO_API(r, n, p) extern r (*n) p
       #include "il2cpp-api-functions.h"

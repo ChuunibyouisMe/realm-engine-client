@@ -31,6 +31,9 @@ static std::atomic<int> s_featSkinOverrideEnabled{0}, s_featSkinOverrideId{0};
 static std::atomic<float> s_featDodgeHorizonMs{800.f}, s_featDodgeHitboxPadding{0.f}, s_featAutoAbilityMpPct{0.f};
 static std::atomic<float> s_featWalkTargetX{0.f}, s_featWalkTargetY{0.f}, s_featCameraZoomValue{8.f};
 static std::atomic<int32_t> s_featClientDefense{static_cast<int32_t>(0x80000000u)}, s_featClientClassType{0};
+// Total SPD stat (base + bonus) pushed from the client's NEWTICK — server-
+// authoritative, name/offset independent. -1 = unset (DLL uses its own fallback).
+static std::atomic<int32_t> s_featClientSpeed{-1};
 
 namespace FeatureState {
 
@@ -81,6 +84,8 @@ void    SetSkinOverride(bool enabled, int skinId)   { s_featSkinOverrideEnabled.
 
 int32_t GetClientDefense()                          { return s_featClientDefense.load(std::memory_order_relaxed); }
 void    SetClientDefense(int32_t defense)           { s_featClientDefense.store(defense, std::memory_order_relaxed); }
+int32_t GetClientSpeed()                            { return s_featClientSpeed.load(std::memory_order_relaxed); }
+void    SetClientSpeed(int32_t speed)               { s_featClientSpeed.store(speed, std::memory_order_relaxed); }
 int32_t GetClientClassType()                        { return s_featClientClassType.load(std::memory_order_relaxed); }
 void    SetClientClassType(int32_t classType)       { s_featClientClassType.store(classType, std::memory_order_relaxed); }
 

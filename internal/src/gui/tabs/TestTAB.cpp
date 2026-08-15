@@ -1,6 +1,7 @@
 #include "pch-il2cpp.h"
 #include "TestTAB.h"
 #include "DangerPlanner.h"
+#include "MovementRuntime.h"
 #include "ProjectileCatalog.h"
 #include "XDodge.h"
 #include "RolloutDodge.h"
@@ -474,17 +475,20 @@ static void ReadPlayerStats(int32_t& hp, int32_t& maxHp, float& spd, float& tile
     if (!lp) return;
     __try { hp    = *(int32_t*)((uint8_t*)lp + RuntimeOffsets::HP);    } __except(EXCEPTION_EXECUTE_HANDLER) {}
     __try { maxHp = *(int32_t*)((uint8_t*)lp + RuntimeOffsets::MaxHP); } __except(EXCEPTION_EXECUTE_HANDLER) {}
-    __try { spd   = *(float*)((uint8_t*)lp + 0x478);   } __except(EXCEPTION_EXECUTE_HANDLER) {}
-    if (spd > 0.f && spd <= 120.f) {
-        // Flash caps speed scaling at SPD=75 — stats above that from
-        // rings/pet/totems don't give additional in-game movement. We
-        // were extrapolating linearly past 75, producing a tilesPerSec
-        // the server refuses to authorize. Clamp before the curve so
-        // our move budget matches server-authoritative walk speed and
-        // the planner stops rubber-banding on high-SPD characters.
-        const float effSpd = (spd > 75.f) ? 75.f : spd;
-        tilesPerSec = 4.0f + 5.6f * (effSpd / 75.0f);
+    // Move budget from the game's own CalcMoveSpeed (name-stable GCFKGLKAPND).
+    // The old raw read at player+0x478 landed on a pointer field after the
+    // 2026-08 layout shift, failed the 0<spd<=120 guard, left tilesPerSec at 0,
+    // and PJDodgeCore's `c.speed <= 0` gate silently disabled every dodge.
+    tilesPerSec = DodgeRuntime::GetTilesPerSec(lp);
+    if (tilesPerSec <= 0.f) {
+        // Unresolved (e.g. first frames in world): assume SPD 50 so the dodge
+        // planner always has a non-zero move budget. Server-authoritative
+        // clamping tolerates a modest under/over-estimate.
+        tilesPerSec = 4.0f + 5.6f * (50.f / 75.f);
     }
+    // Display-equivalent SPD stat back-derived from the speed curve
+    // (Flash: tilesPerSec = 4.0 + 5.6 * spd/75, capped at SPD 75).
+    spd = std::clamp((tilesPerSec - 4.0f) / 5.6f * 75.f, 0.f, 120.f);
 }
 
 
@@ -501,14 +505,12 @@ static void MovePlayer(float targetWorldX, float targetWorldY, float dt,
 
     if (mag < 0.01f) return;
 
-    // Read SPD stat (+0x478) for step budget
-    float spd = 50.f;
-    __try {
-        float s = *(float*)((uint8_t*)player + 0x478);
-        if (s > 0.f && s <= 120.f) spd = s;
-    } __except (EXCEPTION_EXECUTE_HANDLER) {}
+    // Step budget from the game's own CalcMoveSpeed; SPD-50 curve fallback
+    // when unresolved. (The old raw +0x478 SPD read broke on the 2026-08 build.)
+    float tps = DodgeRuntime::GetTilesPerSec(player);
+    if (tps <= 0.f) tps = 4.f + 5.6f * (50.f / 75.f);
 
-    float maxStep = (4.f + 5.6f * (spd / 75.f)) * dt * speedMult;
+    float maxStep = tps * dt * speedMult;
 
     {
         float tileSpd = WorldTAB::GetTileSpeed(

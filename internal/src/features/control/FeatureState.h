@@ -56,6 +56,8 @@ void    SetSkinOverride(bool enabled, int skinId);
 
 int32_t GetClientDefense();
 void    SetClientDefense(int32_t defense);
+int32_t GetClientSpeed();               // total SPD stat, -1 = unset
+void    SetClientSpeed(int32_t speed);
 int32_t GetClientClassType();
 void    SetClientClassType(int32_t classType);
 

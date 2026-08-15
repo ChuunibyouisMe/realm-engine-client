@@ -130,10 +130,10 @@ uint32_t PP_IsAccel         = 0x184;
 uint32_t PP_UseAccel        = 0x185;   // 1 byte after IsAccel — adjacent bool pair
 uint32_t PP_VelocityChangeRate = 0x188;
 uint32_t PP_VelocityChangeRateInv = 0x18C;
-uint32_t PP_Magnitude       = 0x194;
-uint32_t PP_Frequency       = 0x198;
-uint32_t PP_Amplitude       = 0x19C;
-uint32_t PP_HasCustomAmplitude = 0x1A0;
+uint32_t PP_Magnitude       = 0x19C;
+uint32_t PP_Frequency       = 0x1A0;
+uint32_t PP_Amplitude       = 0x1A4;
+uint32_t PP_HasCustomAmplitude = 0x1A8;
 uint32_t PP_CollMult              = 0xC0;
 uint32_t PP_TurnRate              = 0xD4;
 uint32_t PP_TurnRateDelay         = 0xD8;
@@ -167,8 +167,8 @@ uint32_t Player_FacingAngle  = 0x22C;
 // BeeByte decoy names ("GuiCanvasSwitcher", "UpdateRadialValue") preserved
 // in IL2CPP metadata; il2cpp_field_get_offset returns runtime-ready values
 // (all parent ACTK shifts already baked into the dump layout).
-uint32_t Gjj_OriginX    = 0x368;  // GuiCanvasSwitcher.x
-uint32_t Gjj_OriginY    = 0x36C;  // GuiCanvasSwitcher.y (= OriginX+4)
+uint32_t Gjj_OriginX    = 0x370;  // ICODPOCLEEL.x (was "GuiCanvasSwitcher" decoy pre-2026-08 build)
+uint32_t Gjj_OriginY    = 0x374;  // ICODPOCLEEL.y (= OriginX+4)
 uint32_t Gjj_DestX      = 0x370;  // IAJJLFBDJGE.x
 uint32_t Gjj_DestY      = 0x374;  // IAJJLFBDJGE.y (= DestX+4)
 uint32_t Gjj_DurationMs = 0x388;  // EAICINLCCJK
@@ -366,10 +366,10 @@ static Entry s_entries[] = {
     { "ProjectileProperties", { "AccelerationInv", "accelerationInv" },   2, 0,     &PP_AccelerationInv, false },
     { "ProjectileProperties", { "VelocityChangeRate", "velocityChangeRate" }, 2, 0, &PP_VelocityChangeRate, false },
     { "ProjectileProperties", { "VelocityChangeRateInv", "velocityChangeRateInv" }, 2, 0, &PP_VelocityChangeRateInv, false },
-    { "ProjectileProperties", { "Magnitude",  "magnitude" },         2, 0,     &PP_Magnitude,       false },
-    { "ProjectileProperties", { "Frequency",  "frequency" },         2, 0,     &PP_Frequency,       false },
-    { "ProjectileProperties", { "Amplitude",  "amplitude" },         2, 0,     &PP_Amplitude,       false },
-    { "ProjectileProperties", { "HasCustomAmplitude","CustomAmplitude","customAmplitude" }, 3, 0, &PP_HasCustomAmplitude, false },
+    { "ProjectileProperties", { "ProjectileMagnitude", "Magnitude",  "magnitude" },  3, 0, &PP_Magnitude,       false },
+    { "ProjectileProperties", { "ProjectileFrequency", "Frequency",  "frequency" },  3, 0, &PP_Frequency,       false },
+    { "ProjectileProperties", { "ProjectileAmplitude", "Amplitude",  "amplitude" },  3, 0, &PP_Amplitude,       false },
+    { "ProjectileProperties", { "IsAmplitudeApplied", "HasCustomAmplitude","CustomAmplitude","customAmplitude" }, 4, 0, &PP_HasCustomAmplitude, false },
     { "ProjectileProperties", { "CollisionMult","collisionMult",
                                  "ConditionEffectAmount" },          3, 0,     &PP_CollMult,        false },
     { "ProjectileProperties", { "ProjectileTurnRate", "TurnRate","turnRate"},     3, 0, &PP_TurnRate,        false },
@@ -377,8 +377,8 @@ static Entry s_entries[] = {
     { "ProjectileProperties", { "ProjectileTurnStopTime", "TurnStopTime" },      2, 0, &PP_TurnStopTime,    false },
     { "ProjectileProperties", { "ProjectileCircleTurnAngle","CircleTurnAngle" }, 2, 0, &PP_CircleTurnAngle, false },
     { "ProjectileProperties", { "ProjectileCircleTurnDelay","CircleTurnDelay" }, 2, 0, &PP_CircleTurnDelay, false },
-    { "ProjectileProperties", { "TurnAcceleration","turnAcceleration" },          2, 0, &PP_TurnAcceleration,false },
-    { "ProjectileProperties", { "TurnAccelerationDelay","turnAccelerationDelay"},2, 0, &PP_TurnAccelDelay,  false },
+    { "ProjectileProperties", { "ProjectileTurnAcceleration", "TurnAcceleration","turnAcceleration" },       3, 0, &PP_TurnAcceleration,false },
+    { "ProjectileProperties", { "ProjectileTurnAccelerationDelay", "TurnAccelerationDelay","turnAccelerationDelay"}, 3, 0, &PP_TurnAccelDelay,  false },
     { "ProjectileProperties", { "TurnClamp","turnClamp","ProjectileTurnClamp" }, 3, 0, &PP_TurnClamp,       false },
     { "ProjectileProperties", { "TurnAccelerationInv","turnAccelerationInv" },   2, 0, &PP_TurnAccelInv,    false },
     { "ProjectileProperties", { "IsTurning",  "isTurning","Turning"},            3, 0, &PP_IsTurning,       false },
@@ -410,7 +410,7 @@ static Entry s_entries[] = {
     // ── GJJCEFJMNMK throwable entity (no extra shift — runtime offsets in dump) ──
     // "GuiCanvasSwitcher" and "IAJJLFBDJGE" are BeeByte field names for origin/dest Vector2.
     // ACTK shift from LKHPPBEGNOM parent is already reflected in the dump layout.
-    { "GJJCEFJMNMK", { "GuiCanvasSwitcher" },                                     1, 0, &Gjj_OriginX,   false },
+    { "GJJCEFJMNMK", { "ICODPOCLEEL", "GuiCanvasSwitcher" },                      2, 0, &Gjj_OriginX,   false },
     { "GJJCEFJMNMK", { "IAJJLFBDJGE" },                                           1, 0, &Gjj_DestX,     false },
     { "GJJCEFJMNMK", { "EAICINLCCJK" },                                           1, 0, &Gjj_DurationMs,false },
 
@@ -692,33 +692,77 @@ bool MapObjectConditionsMakeUntargetable(uint32_t word0, uint32_t word1)
         || HasCondition(full, ConditionEffects::Invulnerable);// bit 24 — permanent immunity
 }
 
+// Guarded single-offset read + strict shape validation. COHCKAPOLCA is always a
+// 1-D UInt32[2]: object header {klass, monitor, bounds==null, max_length==2}.
+// A wrong offset reads some other field (this build: a float 1.0f dereferenced as
+// a pointer → the 0x3F800018 first-chance AVs), which this validation rejects
+// before we trust the data. Returns: 1 = validated array read, 0 = null array at
+// this offset (legit "no conditions"), -1 = not a conditions array / fault.
+static int TryReadCondArrayAt(void* entity, uint32_t off, uint32_t* outW0, uint32_t* outW1)
+{
+    __try {
+        uint8_t* ent = reinterpret_cast<uint8_t*>(entity);
+        void* arr = *reinterpret_cast<void**>(ent + off);
+        if (!arr)
+            return 0;
+        const uintptr_t a = reinterpret_cast<uintptr_t>(arr);
+        if (a < 0x10000 || a > 0x7FFFFFFFFFFFULL || (a & 7) != 0)
+            return -1;
+        uint8_t* ap = reinterpret_cast<uint8_t*>(arr);
+        void*   klass  = *reinterpret_cast<void**>(ap + 0x00);
+        void*   bounds = *reinterpret_cast<void**>(ap + 0x10);
+        int32_t maxLen = *reinterpret_cast<int32_t*>(ap + 0x18);
+        const uintptr_t k = reinterpret_cast<uintptr_t>(klass);
+        if (k < 0x10000 || k > 0x7FFFFFFFFFFFULL || bounds != nullptr || maxLen != 2)
+            return -1;
+        auto* data = reinterpret_cast<uint32_t*>(ap + 0x20);
+        *outW0 = data[0];
+        *outW1 = data[1];
+        return 1;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return -1;
+    }
+}
+
 bool TryReadMapObjectConditions(void* mapObjectPtr, uint32_t* outWord0, uint32_t* outWord1)
 {
     if (outWord0) *outWord0 = 0;
     if (outWord1) *outWord1 = 0;
     if (!mapObjectPtr || !outWord0 || !outWord1)
         return false;
-    const uint32_t off = MoConditions;
-    if (off == 0)
+    if (MoConditions == 0)
         return false;
 
-    __try {
-        uint8_t* ent = reinterpret_cast<uint8_t*>(mapObjectPtr);
-        void* arr = *reinterpret_cast<void**>(ent + off);
-        if (!arr)
-            return true;
-        int32_t maxLen = *reinterpret_cast<int32_t*>(reinterpret_cast<uint8_t*>(arr) + 0x18);
-        // COHCKAPOLCA is always exactly UInt32[2]. Reject anything else as garbage/wrong class.
-        if (maxLen != 2)
-            return true;
-        auto* data = reinterpret_cast<uint32_t*>(reinterpret_cast<uint8_t*>(arr) + 0x20);
-        *outWord0 = data[0];
-        *outWord1 = data[1];
-        return true;
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        *outWord0 = *outWord1 = 0;
-        return false;
+    // ACTK's per-field runtime shuffle keeps moving COHCKAPOLCA relative to its
+    // metadata offset (the fixed +0x50 assumption broke on the 2026-08 build).
+    // Self-locate instead: once a candidate offset yields a validated UInt32[2]
+    // on a live entity, lock it in for the rest of the session.
+    static uint32_t s_lockedOff = 0;   // 0 = not yet locked
+
+    if (s_lockedOff != 0) {
+        const int r = TryReadCondArrayAt(mapObjectPtr, s_lockedOff, outWord0, outWord1);
+        return r >= 0;   // null array at the right offset = "no conditions", still success
     }
+
+    // Candidates around the name-resolved (metadata + kActk) value, most likely
+    // first: as-resolved, ±8, +0x10, and the raw metadata offset (no ACTK shift).
+    const uint32_t base = MoConditions;
+    const uint32_t candidates[6] = {
+        base, base + 8, base - 8, base + 0x10, base - 0x10, base - kActk,
+    };
+    for (int i = 0; i < 6; ++i) {
+        const int r = TryReadCondArrayAt(mapObjectPtr, candidates[i], outWord0, outWord1);
+        if (r == 1) {
+            s_lockedOff = candidates[i];
+            DBG_FILE_LOG("[RuntimeOffsets] MoConditions self-located at 0x" << std::hex
+                << candidates[i] << " (name-resolved was 0x" << base << std::dec << ")");
+            return true;
+        }
+    }
+    // No candidate validated on this entity (its array may just be null) — report
+    // "no conditions" without locking so a later entity with a live array decides.
+    *outWord0 = *outWord1 = 0;
+    return true;
 }
 
 void FormatMapObjectConditionMask(uint32_t word0, uint32_t word1, char* buf, size_t bufSize)
