@@ -7,6 +7,7 @@
 #include "gui/tabs/WorldTAB.h"
 #include "W2S.h"
 #include "Il2CppResolver.h"
+#include "RuntimeOffsets.h"
 #include "DirectX.h"
 #include "FeatureState.h"
 #include "DbgFileLog.h"
@@ -110,6 +111,59 @@ static bool AddrValid(const void* p)
 }
 
 static bool IsPlausibleOrtho(float f) { return (f == f) && f > 0.05f && f < 500.f; }
+
+struct Vec3 { float x, y, z; };
+
+static const MethodInfo* s_worldToScreenPointMethod = nullptr;
+
+static const MethodInfo* s_screenWidthMethod = nullptr;
+static const MethodInfo* s_screenHeightMethod = nullptr;
+
+static bool InvokeStaticIntGetter(const MethodInfo* method, float& out)
+{
+    if (!method) return false;
+    Il2CppObject* boxed = Resolver::Protection::SafeRuntimeInvoke(method, nullptr, nullptr);
+    if (!boxed) return false;
+    void* unboxed = il2cpp_object_unbox(boxed);
+    if (!unboxed) return false;
+    // No isfinite check: the source is an int32, so the conversion is always
+    // finite. A zero/negative size is the only bad answer possible here.
+    out = static_cast<float>(*reinterpret_cast<const int32_t*>(unboxed));
+    return out > 0.f;
+}
+
+static bool GetUnityScreenSize(float& outWidth, float& outHeight)
+{
+    if (!s_screenWidthMethod || !s_screenHeightMethod) {
+        Il2CppClass* screen = Resolver::FindClass("UnityEngine", "Screen");
+        if (!screen) return false;
+        s_screenWidthMethod = il2cpp_class_get_method_from_name(screen, "get_width", 0);
+        s_screenHeightMethod = il2cpp_class_get_method_from_name(screen, "get_height", 0);
+        if (!s_screenWidthMethod || !s_screenHeightMethod) return false;
+    }
+    return InvokeStaticIntGetter(s_screenWidthMethod,  outWidth)
+        && InvokeStaticIntGetter(s_screenHeightMethod, outHeight);
+}
+
+static bool InvokeWorldToScreen(Il2CppObject* camObj, const Vec3& world,
+                                float& outUnityX, float& outUnityY)
+{
+    if (!camObj || !s_worldToScreenPointMethod) return false;
+    Vec3  worldArg  = world;
+    void* params[1] = { &worldArg };
+    Il2CppObject* boxed =
+        Resolver::Protection::SafeRuntimeInvoke(s_worldToScreenPointMethod, camObj, params);
+    if (!boxed) return false;
+    void* unboxed = il2cpp_object_unbox(boxed);
+    if (!unboxed) return false;
+    const float* vec3Components = reinterpret_cast<const float*>(unboxed);
+    outUnityX = vec3Components[0];
+    outUnityY = vec3Components[1];
+    // Trust boundary: Unity really does return NaN/Inf here for a degenerate
+    // camera (zero-scale transform, projection matrix not yet built). Checking
+    // once at the source is why the arithmetic downstream needs no checks.
+    return std::isfinite(outUnityX) && std::isfinite(outUnityY);
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Refresh — resolves CameraManager and reads all values
@@ -664,6 +718,99 @@ namespace CameraTAB {
     float GetPixelRectW()    { return g_pixelRectW; }
     float GetPixelRectH()    { return g_pixelRectH; }
     bool  GetCenteringState(){ return g_offsetMode; }
+    float GetCamWorldX()     { return g_posX; }
+    float GetCamWorldY()     { return g_posY; }
+
+    bool CalibrateScreenBasis(void* playerPtr, float clientW, float clientH,
+                              ScreenBasis& out, bool refineScaleAndRotation)
+    {
+        if (!playerPtr || !(clientW > 0.f) || !(clientH > 0.f)) return false;
+
+        auto* camObj = reinterpret_cast<Il2CppObject*>(g_unityCamPtr);
+        if (!AddrValid(camObj)) 
+            return false;
+
+        if (!s_worldToScreenPointMethod) {
+            Il2CppClass* klass = il2cpp_object_get_class(camObj);
+            if (!klass) return false;
+            s_worldToScreenPointMethod =
+                il2cpp_class_get_method_from_name(klass, "WorldToScreenPoint", 1);
+            if (!s_worldToScreenPointMethod) return false;
+        }
+
+        float renderW = 0.f, renderH = 0.f;
+        if (!GetUnityScreenSize(renderW, renderH) || !(renderW > 0.f) || !(renderH > 0.f)) {
+            renderW = clientW;
+            renderH = clientH;
+        }
+        const float renderToClientX = clientW / renderW;
+        const float renderToClientY = clientH / renderH;
+
+        // Trust boundary: this is raw game memory at an offset that goes stale
+        // on a game patch, so a bad read is plausible and would otherwise be
+        // handed straight to Unity.
+        Vec3 playerWorld{};
+        if (!SafeRead(playerPtr, RuntimeOffsets::KJ_Float3Pos, playerWorld)) return false;
+        if (!std::isfinite(playerWorld.x) ||
+                !std::isfinite(playerWorld.y) ||
+                !std::isfinite(playerWorld.z))
+            return false;
+
+        float unityPlayerX,     unityPlayerY;
+        float unityPlusWorldXx, unityPlusWorldXy;
+        float unityPlusWorldYx, unityPlusWorldYy;
+        if (!InvokeWorldToScreen(camObj, playerWorld, unityPlayerX, unityPlayerY)) return false;
+
+        const float anchorScreenX = unityPlayerX * renderToClientX;
+        const float anchorScreenY = (renderH - unityPlayerY) * renderToClientY;
+
+        out.anchorTileX   = playerWorld.x;
+        out.anchorTileY   = -playerWorld.y;
+        out.anchorScreenX = anchorScreenX;
+        out.anchorScreenY = anchorScreenY;
+        out.hasAnchor     = true;
+        out.hasScaleAndRotation = false;
+        out.fitResidualPx       = -1.f;
+
+        if (!refineScaleAndRotation) 
+            return true;
+        if (!InvokeWorldToScreen(camObj, Vec3{ playerWorld.x + 1.f, playerWorld.y, playerWorld.z },
+                                 unityPlusWorldXx, unityPlusWorldXy)) 
+            return true;
+        if (!InvokeWorldToScreen(camObj, Vec3{ playerWorld.x, playerWorld.y + 1.f, playerWorld.z },
+                                 unityPlusWorldYx, unityPlusWorldYy)) 
+            return true;
+
+        const float worldXAxisPxX = unityPlusWorldXx * renderToClientX - anchorScreenX;
+        const float worldXAxisPxY = (renderH - unityPlusWorldXy) * renderToClientY - anchorScreenY;
+        // NOTE: Unity +Y and ROTMG  +Y are inverted 
+        const float worldYAxisPxX = -(unityPlusWorldYx * renderToClientX - anchorScreenX);
+        const float worldYAxisPxY = -((renderH - unityPlusWorldYy) * renderToClientY - anchorScreenY);
+
+        const float worldXAxisLenPx =
+            std::sqrt(worldXAxisPxX * worldXAxisPxX + worldXAxisPxY * worldXAxisPxY);
+        const float worldYAxisLenPx =
+            std::sqrt(worldYAxisPxX * worldYAxisPxX + worldYAxisPxY * worldYAxisPxY);
+
+        // Rejects a degenerate/zero-zoom projection. Written as `!(x > 1.f)` so
+        // it also rejects NaN, which makes a separate isfinite check redundant.
+        if (!(worldXAxisLenPx > 1.f) || !(worldYAxisLenPx > 1.f))
+            return true;
+
+        const float rotationRad   = std::atan2(worldXAxisPxY, worldXAxisPxX);
+        const float pixelsPerTile = 0.5f * (worldXAxisLenPx + worldYAxisLenPx);
+
+        const float expectedYAxisPxX = -std::sin(rotationRad) * pixelsPerTile;
+        const float expectedYAxisPxY =  std::cos(rotationRad) * pixelsPerTile;
+        const float residualX = worldYAxisPxX - expectedYAxisPxX;
+        const float residualY = worldYAxisPxY - expectedYAxisPxY;
+        out.fitResidualPx = std::sqrt(residualX * residualX + residualY * residualY);
+
+        out.pixelsPerTile        = pixelsPerTile;
+        out.rotationRad          = rotationRad;
+        out.hasScaleAndRotation  = true;
+        return true;
+    }
     void  SetZoomValue(float zoom)
     {
         // Always apply — the cached g_zoom may be stale if DoRefresh() hasn't run.

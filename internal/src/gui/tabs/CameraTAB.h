@@ -21,6 +21,25 @@ namespace CameraTAB {
     // Centering state (IOABMGFJLLP) — live, re-read every frame in Render().
     // true = camera NOT centred on player; false = following player (default).
     bool  GetCenteringState();
+
+    float GetCamWorldX();
+    float GetCamWorldY();
+
+    struct ScreenBasis {
+        bool  hasAnchor = false;
+        float anchorTileX   = 0.f, anchorTileY   = 0.f;
+        float anchorScreenX = 0.f, anchorScreenY = 0.f;
+
+        bool  hasScaleAndRotation = false;
+        float rotationRad  = 0.f;
+        float pixelsPerTile = 0.f;
+
+        float fitResidualPx = -1.f;
+    };
+
+    bool  CalibrateScreenBasis(void* playerPtr, float clientW, float clientH,
+                               ScreenBasis& out, bool refineScaleAndRotation = true);
+
     void  SetZoomValue(float zoom);
     void  SetAngleDegrees(int angleDeg);
     void  SetCenteredOnPlayer(bool centered);
