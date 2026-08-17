@@ -581,13 +581,24 @@ export function register(ctx: PluginContext) {
   ctx.hookCommand('an', (client, _cmd, args) => {
     const state = getState(client);
     if (args.length === 0) {
+      ctx.enabled = !ctx.enabled;
       const threshHp = Math.round(getThresholdHp(state));
-      ctx.sendNotification(client, 'AutoNexus', `Nexus threshold: ${nexusThresholdPct}% (${threshHp} HP)`);
+      ctx.sendNotification(client, 'AutoNexus', `Auto Nexus ${ctx.enabled ? 'ON' : 'OFF'} — threshold: ${nexusThresholdPct}% (${threshHp} HP)`);
+      return;
+    }
+    const arg = args[0].toLowerCase();
+    if (arg === 'on' || arg === 'enable') {
+      ctx.enabled = true;
+      ctx.sendNotification(client, 'AutoNexus', `Auto Nexus ON (${nexusThresholdPct}%)`);
+      return;
+    } else if (arg === 'off' || arg === 'disable') {
+      ctx.enabled = false;
+      ctx.sendNotification(client, 'AutoNexus', 'Auto Nexus OFF');
       return;
     }
     const val = parseInt(args[0], 10);
     if (isNaN(val) || val < 1 || val > 100) {
-      ctx.sendNotification(client, 'AutoNexus', 'Usage: /an [1-100]');
+      ctx.sendNotification(client, 'AutoNexus', 'Usage: /an [1-100] or /an on/off');
       return;
     }
     nexusThresholdPct = Math.max(1, Math.min(100, val));

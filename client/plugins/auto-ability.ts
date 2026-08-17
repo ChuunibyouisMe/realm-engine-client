@@ -53,6 +53,12 @@ export function register(ctx: PluginContext) {
     flush(true);
   });
 
+  ctx.hookCommand('ab', (client) => {
+    ctx.enabled = !ctx.enabled;
+    flush(!ctx.enabled);
+    ctx.sendNotification(client, ctx.name, `Auto Ability ${ctx.enabled ? 'ON' : 'OFF'}`);
+  });
+
   ctx.registerCleanup(() => {
     flush(true);
   });
