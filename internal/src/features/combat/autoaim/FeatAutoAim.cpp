@@ -13,17 +13,17 @@ namespace CombatTAB {
 namespace FeatAutoAim {
 
 static bool  s_aimEnabled          = false;
-static int   s_aimMode             = 0;
+static int   s_aimMode             = 2;
 static bool  s_noclipEnabled       = false;
 static bool  s_shootInvulnerable   = true;
-static bool  s_prioritizeBosses    = true;
-static bool  s_ignoreWalls         = true;
-static bool  s_reverseCultStaff    = true;
+static bool  s_prioritizeBosses    = false;
+static bool  s_ignoreWalls         = false;
+static bool  s_reverseCultStaff    = false;
 static bool  s_offsetColossusSword = false;
 static bool  s_shootWhileStealthed = true;
 static bool  s_mouseBoundingOn     = true;
-static float s_mouseBoundingRange  = 2.f;
-static float s_rangeLeadBias       = 1.f;
+static float s_mouseBoundingRange  = 2.5f;
+static float s_rangeLeadBias       = 0.9f;
 static bool  s_capturingKey        = false;
 
 // Phase-skip list — editable in the UI; stored as a fixed-capacity array of raw ints.

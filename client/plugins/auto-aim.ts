@@ -17,7 +17,7 @@ export function register(ctx: PluginContext) {
   let loggedSharedOpen = false;
   let loggedBridgeTelemetry = false;
 
-  let aimModeIdx = 0;
+  let aimModeIdx = 2;
   function syncControlState() {
     sendDllFeature('autoAimMode', aimModeIdx);
     sendDllFeature('autoAimEnabled', ctx.enabled);
@@ -33,14 +33,14 @@ export function register(ctx: PluginContext) {
   ctx.registerSetting('aimMode', {
     label: 'Aim mode',
     type: 'select',
-    value: 'player',
+    value: 'mouse',
     options: [
       { label: 'Closest to player', value: 'player' },
       { label: 'Highest HP', value: 'hp' },
       { label: 'Closest to mouse', value: 'mouse' },
     ],
   }, (val: string) => {
-    aimModeIdx = val === 'hp' ? 1 : val === 'mouse' ? 2 : 0;
+    aimModeIdx = val === 'hp' ? 1 : val === 'player' ? 0 : 2;
     // #region agent log
     // #endregion
     syncControlState();
@@ -57,7 +57,7 @@ export function register(ctx: PluginContext) {
   ctx.registerSetting('ignoreWalls', {
     label: 'Ignore walls / no-HP-bar',
     type: 'boolean',
-    value: true,
+    value: false,
   }, (val: boolean) => {
     sendDllFeature('autoAimIgnoreWalls', val);
   });

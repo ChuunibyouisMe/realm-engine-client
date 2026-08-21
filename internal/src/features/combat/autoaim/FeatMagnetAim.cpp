@@ -6,8 +6,8 @@
 namespace CombatTAB {
 namespace FeatMagnetAim {
 
-static bool  s_enabled = false;
-static float s_visualOffsetTiles = 1.8f;
+static bool  s_enabled = true;
+static float s_visualOffsetTiles = 1.5f;
 
 void Tick(bool /*menuOpen*/)
 {

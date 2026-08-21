@@ -22,7 +22,7 @@ namespace {
     static float ClampFloat(float v, float lo, float hi) { return v < lo ? lo : (v > hi ? hi : v); }
 }
 
-static std::atomic<int> s_featAutoAimEnabled{0}, s_featAutoAimMode{0}, s_featProjectileNoclipEnabled{0};
+static std::atomic<int> s_featAutoAimEnabled{0}, s_featAutoAimMode{2}, s_featProjectileNoclipEnabled{0};
 static std::atomic<int> s_featDodgeMode{0}, s_featDodgeWallAvoid{1}, s_featAutoAbilityEnabled{0}, s_featAutoAbilityWizardMode{0};
 static std::atomic<int> s_featPlayerNoclipActive{0}, s_featPlayerNoclipEnabled{0}, s_featPlayerNoclipHotkeyVk{'N'}, s_pendingPlayerNoclipEnabled{-1};
 static std::atomic<int> s_featSocketHotkeyActive{0}, s_featSocketHotkeyVk{'L'}, s_featWalkTargetActive{0};

@@ -24,17 +24,17 @@ static inline bool AddrOk(const void* p) {
 
 // ── Frame-level state ─────────────────────────────────────────────────────────
 static std::atomic<bool>    s_enabled{ false };
-static std::atomic<int>     s_aimModeInt{ 0 };
+static std::atomic<int>     s_aimModeInt{ 2 }; // 2 = ClosestToMouse
 static std::atomic<int32_t> s_lockedEnemyId{ -1 };
 
 static std::atomic<bool>    s_shootInvulnerable{ true };
-static std::atomic<bool>    s_prioritizeBosses{ true };
-static std::atomic<bool>    s_ignoreWalls{ true };
+static std::atomic<bool>    s_prioritizeBosses{ false };
+static std::atomic<bool>    s_ignoreWalls{ false };
 static std::atomic<bool>    s_shootWhileStealthed{ true };
 static std::atomic<bool>    s_mouseBoundingEnabled{ true };
-static std::atomic<float>   s_mouseBoundingRange{ 2.f };
-static std::atomic<float>   s_rangeLeadBias{ 1.f };
-static std::atomic<bool>    s_reverseCultStaff{ true };
+static std::atomic<float>   s_mouseBoundingRange{ 2.5f };
+static std::atomic<float>   s_rangeLeadBias{ 0.9f };
+static std::atomic<bool>    s_reverseCultStaff{ false };
 static std::atomic<bool>    s_offsetColossus{ false };
 
 static std::atomic<bool>    s_hasTarget{ false };
