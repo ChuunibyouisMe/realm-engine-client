@@ -144,7 +144,7 @@ function rewriteBigBagSize(status: { data?: Array<{ id: unknown; value: unknown 
  */
 export function registerBigBags(ctx: PluginContext, settings: AutoLootSettings): void {
   ctx.hookPacket('UPDATE', (_client, packet) => {
-    if (!settings.bigLootBags || !packet.isDefined) return;
+    if (!ctx.enabled || !settings.bigLootBags || !packet.isDefined) return;
     const newObjs = packet.data.newObjs as Array<{
       objectType?: number;
       status?: { data?: Array<{ id: unknown; value: unknown }> };

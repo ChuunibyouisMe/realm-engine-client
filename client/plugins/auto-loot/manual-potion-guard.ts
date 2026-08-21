@@ -89,27 +89,16 @@ export class ManualPotionGuard {
   }
 
   /**
-   * Outgoing-packet handler (wire to `hookAllPackets`). Blocks the player's manual
-   * potion/quickslot packets while an Auto Loot swap is settling, otherwise records
-   * the manual action so Auto Loot pauses.
+   * Outgoing-packet handler (wire to `hookAllPackets`). When the player manually
+   * uses or swaps potions/items, records the manual action so Auto Loot pauses.
+   * Never drops the player's manual packets to avoid client/server desync.
    */
   handleOutgoingPacket(client: ClientConnection, packet: any, fromClient: boolean): void {
-    if (!fromClient) return;
-    if (!GUARDED_PACKETS.has(packet.name)) return;
+    if (!fromClient || !this.ctx.enabled || !this.settings.enabled) return;
+    if (!GUARDED_PACKETS.has(packet.name) && packet.name !== 'INVSWAP') return;
     if (!ManualPotionGuard.packetTouchesQuickslotOrPotion(packet)) return;
 
-    const state = this.store.get(client);
-    const now = Date.now();
-    const blocked = this.isPendingHpMpAutoLootActive(state, now) || now < state.manualPotionPacketBlockUntil;
-
-    if (blocked) {
-      packet.send = false;
-      this.blockManualPacket(client, packet.name);
-      this.diag(`manualGuard BLOCKED ${packet.name}`);
-      return;
-    }
-
     this.suppressAfterManualAction(client, packet.name, true);
-    this.diag(`manualGuard ALLOWED ${packet.name}`);
+    this.diag(`manualGuard observed ${packet.name} — paused auto-loot`);
   }
 }

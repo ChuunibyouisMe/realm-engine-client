@@ -23,22 +23,14 @@ export function findBeltSlot(client: ClientConnection, idSet: Set<number>): Foun
   return null;
 }
 
-/** First matching potion in inventory (slots 4-11), then backpack (slots 12-27). */
+/** First matching potion in inventory (slots 4-11 only). Backpack slots cannot be directly consumed via USEITEM. */
 export function findInventorySlot(client: ClientConnection, idSet: Set<number>): FoundSlot | null {
   const inv = client.playerData.inventory;
-  for (let slot = 4; slot < inv.length; slot++) {
+  const maxSlot = Math.min(12, inv.length);
+  for (let slot = 4; slot < maxSlot; slot++) {
     const itemId = Number(inv[slot] ?? -1);
     if (itemId !== -1 && idSet.has(itemId)) {
       return { slotId: slot, itemType: itemId };
-    }
-  }
-  if (client.playerData.hasBackpack) {
-    const bp = client.playerData.backpack;
-    for (let slot = 0; slot < bp.length; slot++) {
-      const itemId = Number(bp[slot] ?? -1);
-      if (itemId !== -1 && idSet.has(itemId)) {
-        return { slotId: 12 + slot, itemType: itemId };
-      }
     }
   }
   return null;
