@@ -427,6 +427,8 @@ DWORD WINAPI IpcBridgeThread(LPVOID)
                 serverAddr.sin_addr.s_addr = inet_addr("127.0.0.1");
 
                 if (connect(sock, reinterpret_cast<sockaddr*>(&serverAddr), sizeof(serverAddr)) == 0) {
+                    u_long nonBlocking = 1;
+                    ioctlsocket(sock, FIONBIO, &nonBlocking);
                     transport.kind = TransportKind::TcpSocket;
                     transport.sock = sock;
                     DBG_FILE_LOG("[IpcBridgeThread] Connected via TCP (127.0.0.1:4242)");
@@ -446,6 +448,7 @@ DWORD WINAPI IpcBridgeThread(LPVOID)
         DBG_FILE_LOG("[IpcBridgeThread] Transport connected. Sending hello...");
         DbgLog("Connected. Sending hello...");
         Handshake::ResetAuthState(&s_auth);
+        IpcFraming::ResetState();
 
         char msgBuf[PIPE_BUFFER_SIZE];
         char helloChallenge[65] = {};
@@ -614,6 +617,7 @@ DWORD WINAPI IpcBridgeThread(LPVOID)
         }
 
         Handshake::ResetAuthState(&s_auth);
+        IpcFraming::ResetState();
         transport.Close();
         DbgLog("Disconnected. Will reconnect.");
     }

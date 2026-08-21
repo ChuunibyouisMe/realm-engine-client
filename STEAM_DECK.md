@@ -19,10 +19,10 @@ This guide explains how to build, run, and hook **Realm Engine** with **RotMG Ex
 3. **Configure Steam Launch Options**:
    In Steam, right-click **Realm of the Mad God** → **Properties...** → **General** → **Launch Options**, set:
    ```bash
-   WINEDLLOVERRIDES="version=n,b" %command%
+   WINEDLLOVERRIDES="winhttp,version=n,b" %command%
    ```
 4. **Launch**:
-   Start Realm Engine, then start RotMG Exalt from Steam. The DLL connects via local TCP bridge (`127.0.0.1:4242`) directly to Realm Engine.
+   Start Realm Engine, then start RotMG Exalt from Steam. `winhttp.dll` automatically routes network traffic to the Realm Engine MITM proxy (`127.0.0.1:2050`), and `version.dll` connects via local TCP bridge (`127.0.0.1:4242`) directly to Realm Engine.
 
 ---
 
@@ -31,10 +31,10 @@ This guide explains how to build, run, and hook **Realm Engine** with **RotMG Ex
 By default, Proton / Wine uses its built-in Windows system DLLs rather than native DLLs placed in the application directory.
 Setting:
 ```bash
-WINEDLLOVERRIDES="version=n,b" %command%
+WINEDLLOVERRIDES="winhttp,version=n,b" %command%
 ```
-tells Wine to prefer the **native** (`n`) `version.dll` in the game folder, falling back to **builtin** (`b`) if needed.
-All 17 standard export functions (`GetFileVersionInfoA`, `VerQueryValueW`, etc.) are forwarded seamlessly, allowing early initialization and IL2CPP hook injection before the game window opens.
+tells Wine to prefer the **native** (`n`) `winhttp.dll` (for proxy routing) and `version.dll` (for in-game overlay and cheat hooks) in the game folder, falling back to **builtin** (`b`) if needed.
+All standard export functions are forwarded seamlessly, allowing early initialization and IL2CPP hook injection before the game window opens.
 
 ---
 

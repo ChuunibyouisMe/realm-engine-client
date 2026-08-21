@@ -59,6 +59,14 @@ bool WriteMessage(const IpcTransport& transport, const char* json, int len)
     return false;
 }
 
+static uint8_t s_rxBuf[131072];
+static size_t s_rxLen = 0;
+
+void ResetState()
+{
+    s_rxLen = 0;
+}
+
 int ReadMessage(const IpcTransport& transport, char* buf, int bufSize)
 {
     if (transport.kind == TransportKind::NamedPipe) {
@@ -66,26 +74,55 @@ int ReadMessage(const IpcTransport& transport, char* buf, int bufSize)
     }
     if (transport.kind == TransportKind::TcpSocket) {
         if (transport.sock == INVALID_SOCKET) return -1;
-        u_long bytesAvail = 0;
-        if (ioctlsocket(transport.sock, FIONREAD, &bytesAvail) != 0) return -1;
-        if (bytesAvail < 4) return 0;
+
+        // Drain any incoming bytes from non-blocking TCP socket into stream buffer
+        char temp[4096];
+        while (true) {
+            int n = recv(transport.sock, temp, sizeof(temp), 0);
+            if (n > 0) {
+                if (s_rxLen + static_cast<size_t>(n) <= sizeof(s_rxBuf)) {
+                    memcpy(s_rxBuf + s_rxLen, temp, static_cast<size_t>(n));
+                    s_rxLen += static_cast<size_t>(n);
+                } else {
+                    // Buffer overflow safeguard
+                    s_rxLen = 0;
+                    return -1;
+                }
+            } else if (n == 0) {
+                // Socket gracefully closed by remote end
+                s_rxLen = 0;
+                return -1;
+            } else {
+                int err = WSAGetLastError();
+                if (err == WSAEWOULDBLOCK) {
+                    break; // No more data immediately waiting in OS queue
+                }
+                // Fatal socket error
+                s_rxLen = 0;
+                return -1;
+            }
+        }
+
+        if (s_rxLen < 4) return 0; // Waiting for 4-byte header
 
         uint32_t msgLen = 0;
-        int peeked = recv(transport.sock, reinterpret_cast<char*>(&msgLen), 4, MSG_PEEK);
-        if (peeked != 4) return -1;
-        if (msgLen == 0 || msgLen >= static_cast<uint32_t>(bufSize)) return -1;
-        if (bytesAvail < 4 + msgLen) return 0; // wait for complete frame
-
-        int readHdr = recv(transport.sock, reinterpret_cast<char*>(&msgLen), 4, 0);
-        if (readHdr != 4) return -1;
-
-        uint32_t totalRead = 0;
-        while (totalRead < msgLen) {
-            int n = recv(transport.sock, buf + totalRead, static_cast<int>(msgLen - totalRead), 0);
-            if (n <= 0) return -1;
-            totalRead += static_cast<uint32_t>(n);
+        memcpy(&msgLen, s_rxBuf, 4);
+        if (msgLen == 0 || msgLen >= static_cast<uint32_t>(bufSize) || msgLen > 65536) {
+            s_rxLen = 0;
+            return -1;
         }
+
+        if (s_rxLen < 4 + msgLen) return 0; // Frame incomplete, wait for remaining bytes
+
+        memcpy(buf, s_rxBuf + 4, msgLen);
         buf[msgLen] = '\0';
+
+        size_t remaining = s_rxLen - (4 + msgLen);
+        if (remaining > 0) {
+            memmove(s_rxBuf, s_rxBuf + 4 + msgLen, remaining);
+        }
+        s_rxLen = remaining;
+
         return static_cast<int>(msgLen);
     }
     return -1;

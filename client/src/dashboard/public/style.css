@@ -13698,15 +13698,7 @@ body {
   }
 
   .content-tab::after {
-    content: attr(data-label) !important;
-    width: auto !important;
-    opacity: 1 !important;
-    transform: none !important;
-    font-size: 11px !important;
-    font-weight: 700 !important;
-    white-space: nowrap !important;
-    color: inherit !important;
-    display: inline-block !important;
+    display: none !important;
   }
 
   #content-tabs:hover .content-tab,

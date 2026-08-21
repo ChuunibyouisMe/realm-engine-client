@@ -188,9 +188,9 @@ HRESULT __stdcall dPresent(IDXGISwapChain* __this, UINT SyncInterval, UINT Flags
 	__this->GetDesc(&sd);
 
 	HWND targetHwnd = sd.OutputWindow;
-	if (!targetHwnd || !IsWindow(targetHwnd)) targetHwnd = FindWindowA("UnityWndClass", nullptr);
-	if (!targetHwnd || !IsWindow(targetHwnd)) targetHwnd = GetForegroundWindow();
-	if (!targetHwnd || !IsWindow(targetHwnd)) targetHwnd = GetActiveWindow();
+	if (!targetHwnd || !IsWindow(targetHwnd)) {
+		targetHwnd = FindWindowA("UnityWndClass", nullptr);
+	}
 
 	if (!settings.ImGuiInitialized) {
 		if (targetHwnd && IsWindow(targetHwnd)) {
@@ -212,7 +212,7 @@ HRESULT __stdcall dPresent(IDXGISwapChain* __this, UINT SyncInterval, UINT Flags
 				DBG_FILE_LOG("[DirectX] ImGui initialized on hwnd=" << (void*)DirectX::window);
 			}
 		}
-	} else if (targetHwnd && IsWindow(targetHwnd) && (!DirectX::window || !IsWindow(DirectX::window) || DirectX::window != targetHwnd)) {
+	} else if (targetHwnd && IsWindow(targetHwnd) && (!DirectX::window || !IsWindow(DirectX::window))) {
 		DBG_FILE_LOG("[DirectX] Window handle migrated from " << (void*)DirectX::window << " to " << (void*)targetHwnd);
 		if (DirectX::window && IsWindow(DirectX::window) && oWndProc) {
 			SetWindowLongPtr(DirectX::window, GWLP_WNDPROC, (LONG_PTR)oWndProc);

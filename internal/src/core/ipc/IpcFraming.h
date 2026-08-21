@@ -46,5 +46,6 @@ int ReadMessage(const IpcTransport& transport, char* buf, int bufSize);
 
 bool WriteMessage(HANDLE hPipe, const char* json, int len);
 int ReadMessage(HANDLE hPipe, char* buf, int bufSize);
+void ResetState();
 
 } // namespace IpcFraming
