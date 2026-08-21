@@ -7,7 +7,7 @@ namespace CombatTAB {
 namespace FeatMagnetAim {
 
 static bool  s_enabled = false;
-static float s_visualOffsetTiles = 2.5f;
+static float s_visualOffsetTiles = 1.8f;
 
 void Tick(bool /*menuOpen*/)
 {
@@ -30,7 +30,7 @@ void Render()
 
     ImGui::Checkbox("Enable##magnetAimEnable", &s_enabled);
     if (s_enabled) {
-        ImGui::SliderFloat("Offset Distance##magnetOffset", &s_visualOffsetTiles, 0.5f, 10.0f, "%.1f tiles");
+        ImGui::SliderFloat("Offset Distance##magnetOffset", &s_visualOffsetTiles, 0.2f, 3.0f, "%.1f tiles");
     }
     ImGui::TextDisabled("Advances the local SpawnProjectile origin toward the target.");
     ImGui::TextDisabled("Extends effective range and reduces projectile flight time.");
