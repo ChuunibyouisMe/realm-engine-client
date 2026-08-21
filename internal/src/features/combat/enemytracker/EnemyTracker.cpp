@@ -89,50 +89,47 @@ static void UpdateVelocity(int32_t id, float ex, float ey, ULONGLONG now, void* 
         } __except (EXCEPTION_EXECUTE_HANDLER) {}
     }
 
+    static ULONGLONG s_lastCleanup = 0;
+    if (now - s_lastCleanup > 3000) {
+        s_lastCleanup = now;
+        for (auto itClean = s_velMap.begin(); itClean != s_velMap.end(); ) {
+            if (now - itClean->second.t > 2000) {
+                itClean = s_velMap.erase(itClean);
+            } else {
+                ++itClean;
+            }
+        }
+    }
+
     auto it = s_velMap.find(id);
     if (it == s_velMap.end()) {
-        s_velMap[id] = { ex, ey, now, haveMo ? moVx : 0.f, haveMo ? moVy : 0.f };
+        s_velMap[id] = { ex, ey, now, 0.f, 0.f };
         return;
     }
 
     VelEntry& e = it->second;
-    if (haveMo) {
-        e.vx = e.vx * (1.f - kMoVelSmooth) + moVx * kMoVelSmooth;
-        e.vy = e.vy * (1.f - kMoVelSmooth) + moVy * kMoVelSmooth;
-        e.x = ex; e.y = ey; e.t = now;
-        return;
-    }
-
-    const float dx = ex - e.x, dy = ey - e.y;
-    const float distSq = dx * dx + dy * dy;
-    e.x = ex; e.y = ey;
-    if (distSq > 1e-14f) {
-        // dt spans the true inter-position interval (server tick), not just the poll
-        // interval, because e.t is only updated when the position actually changes.
-        const float dt  = static_cast<float>(now > e.t ? (now - e.t) : 1ULL);
-        const float dtC = (dt < 1.f) ? 1.f : (dt > 500.f ? 500.f : dt);
-        float ivx = dx / dtC, ivy = dy / dtC;
-        const float mag = sqrtf(ivx * ivx + ivy * ivy);
-        if (mag > kMaxInstTilesPerMs && mag > 1e-8f) {
-            const float s = kMaxInstTilesPerMs / mag;
-            ivx *= s; ivy *= s;
+    const float dtSec = static_cast<float>(now - e.t) / 1000.0f;
+    if (dtSec > 0.005f && dtSec < 0.35f) {
+        const float vx = (ex - e.x) / dtSec; // tiles per second
+        const float vy = (ey - e.y) / dtSec; // tiles per second
+        const float speed = sqrtf(vx * vx + vy * vy);
+        if (speed < 35.0f) {
+            const float curVx = e.vx * 1000.f;
+            const float curVy = e.vy * 1000.f;
+            const float newVx = curVx * 0.25f + vx * 0.75f;
+            const float newVy = curVy * 0.25f + vy * 0.75f;
+            e.vx = newVx / 1000.f; // store as tiles per ms
+            e.vy = newVy / 1000.f;
         }
-        float blend = 0.4f;
-        if (dt >= kServerTickMsMin && dt <= kServerTickMsMax)
-            blend = 0.9f;
-        if (e.t != 0) {
-            e.vx = e.vx * (1.f - blend) + ivx * blend;
-            e.vy = e.vy * (1.f - blend) + ivy * blend;
-        } else {
-            e.vx = ivx; e.vy = ivy;
-        }
+        e.x = ex;
+        e.y = ey;
         e.t = now;
     } else if (now - e.t > 200ULL) {
-        // Enemy is stationary — decay velocity to 0 so lead prediction doesn't aim at stale positions
-        e.vx *= 0.5f;
-        e.vy *= 0.5f;
-        if (fabsf(e.vx) < 1e-5f) e.vx = 0.f;
-        if (fabsf(e.vy) < 1e-5f) e.vy = 0.f;
+        e.vx = 0.f;
+        e.vy = 0.f;
+        e.x = ex;
+        e.y = ey;
+        e.t = now;
     }
 }
 

@@ -1,10 +1,12 @@
 #include "pch-il2cpp.h"
 
 #include "TargetSelector.h"
-#include "AimMath.h"
 #include "FeatMagnetAim.h"
 #include "features/combat/enemytracker/EnemyTracker.h"
 #include "gui/tabs/TestTAB.h"
+#include "gui/tabs/CameraTAB.h"
+#include "game/math/W2S.h"
+#include "platform/hooks/DirectX.h"
 
 #include <cmath>
 #include <cstdint>
@@ -36,7 +38,7 @@ static bool IsFallbackType(int32_t t) {
 }
 
 struct TierState {
-    float   bestDist = 0.f;
+    float   bestDist = 99999999.f;
     int32_t bestHp   = -1;
     float   bestX = 0.f, bestY = 0.f;
     float   bestVx = 0.f, bestVy = 0.f;
@@ -46,7 +48,7 @@ struct TierState {
 };
 
 static void TierUpdate(TierState& tier, bool useHighestHp,
-                       float distSq, int32_t hp,
+                       float metric, int32_t hp,
                        float x, float y, float vx, float vy,
                        int32_t id, int32_t objType)
 {
@@ -54,14 +56,46 @@ static void TierUpdate(TierState& tier, bool useHighestHp,
     if (!tier.found) {
         better = true;
     } else if (useHighestHp) {
-        better = hp > tier.bestHp || (hp == tier.bestHp && distSq < tier.bestDist);
+        better = hp > tier.bestHp || (hp == tier.bestHp && metric < tier.bestDist);
     } else {
-        better = distSq < tier.bestDist;
+        better = metric < tier.bestDist;
     }
     if (!better) return;
-    tier.found = true; tier.bestDist = distSq; tier.bestHp = hp;
+    tier.found = true; tier.bestDist = metric; tier.bestHp = hp;
     tier.bestX = x; tier.bestY = y; tier.bestVx = vx; tier.bestVy = vy;
     tier.bestId = id; tier.bestObjType = objType;
+}
+
+static bool ProjectEnemyToScreen(float ex, float ey, float playerX, float playerY, float& outSX, float& outSY)
+{
+    float angleDeg = CameraTAB::GetAngle();
+    float ortho = CameraTAB::GetZoom();
+    if (ortho == 0.f) ortho = 8.f;
+    const float angleRad = angleDeg * (3.1415926535f / 180.f);
+
+    HWND wnd = DirectX::window;
+    if (!wnd) return false;
+    RECT r;
+    GetClientRect(wnd, &r);
+    const float screenW = static_cast<float>(r.right - r.left);
+    const float screenH = static_cast<float>(r.bottom - r.top);
+    if (screenW <= 0.f || screenH <= 0.f) return false;
+
+    float cx = screenW * 0.5f;
+    float cy = screenH * 0.5f;
+    float zoom = screenH / (2.f * ortho);
+
+    const float prX = CameraTAB::GetPixelRectX();
+    const float prY = CameraTAB::GetPixelRectY();
+    const float prW = CameraTAB::GetPixelRectW();
+    const float prH = CameraTAB::GetPixelRectH();
+    if (prW > 16.f && prH > 16.f) {
+        cx = prX + prW * 0.5f;
+        cy = screenH - (prY + prH * 0.5f);
+        zoom = prH / (2.f * ortho);
+    }
+
+    return W2S(ex, ey, outSX, outSY, playerX, playerY, angleRad, zoom, cx, cy);
 }
 
 } // namespace
@@ -75,6 +109,11 @@ Result Select(const Config& cfg,
 {
     const std::vector<EnemyTracker::Entry>& snap = EnemyTracker::GetSnapshot();
 
+    const float weaponRange = (weapon.rangeTiles > 2.f) ? weapon.rangeTiles : 15.f;
+    const float magnetOffset = CombatTAB::FeatMagnetAim::IsEnabled() ? CombatTAB::FeatMagnetAim::GetVisualOffsetTiles() : 0.f;
+    const float maxWeaponRange = weaponRange + cfg.rangeLeadBias + magnetOffset;
+    const float maxWeaponRangeSq = maxWeaponRange * maxWeaponRange;
+
     // ── Locked mode: bypass all tier logic ──────────────────────────────────
     if (cfg.mode == Mode::Locked && cfg.lockedEnemyId >= 0) {
         for (const EnemyTracker::Entry& e : snap) {
@@ -87,36 +126,36 @@ Result Select(const Config& cfg,
             r.enemyId = e.id;
             r.objType = e.objType;
 
-            const float vxTps = e.vx * 1000.f, vyTps = e.vy * 1000.f;
-            const float spd      = (weapon.avgSpeedTps > 0.1f) ? weapon.avgSpeedTps : 10.f;
-            const float maxLead  = (weapon.lifetimeMs  > 0.f)  ? weapon.lifetimeMs / 1000.f : 2.f;
-            if (vxTps != 0.f || vyTps != 0.f)
-                AimMath::QuadraticIntercept(playerX, playerY, e.x, e.y, vxTps, vyTps, spd, r.aimX, r.aimY, maxLead);
-            else { r.aimX = e.x; r.aimY = e.y; }
+            float aimX = e.x, aimY = e.y;
+            const float projSpeed = (weapon.avgSpeedTps > 0.1f) ? weapon.avgSpeedTps : 16.0f;
+            if (projSpeed > 0.1f) {
+                const float dist = sqrtf((aimX - playerX) * (aimX - playerX) + (aimY - playerY) * (aimY - playerY));
+                float travelTime = dist / projSpeed;
+                const float maxTime = (weapon.lifetimeMs > 0.f) ? (weapon.lifetimeMs / 1000.f) : 1.5f;
+                travelTime = (std::min)(travelTime, maxTime);
+                const float lead = std::clamp(cfg.rangeLeadBias, 0.0f, 2.5f);
+                aimX += (e.vx * 1000.f) * travelTime * lead;
+                aimY += (e.vy * 1000.f) * travelTime * lead;
+            }
+            r.aimX = aimX;
+            r.aimY = aimY;
             return r;
         }
-        // Lock target gone/invalid — fall through to normal selection
     }
 
-    // ── Reference point and range ────────────────────────────────────────────
     const bool useMouseRef  = (cfg.mode == Mode::ClosestToMouse);
     const bool useHighestHp = (cfg.mode == Mode::HighestHP);
 
-    float refX = playerX, refY = playerY;
-    if (useMouseRef) {
-        const float mx = TestTAB::GetMouseWorldX();
-        const float my = TestTAB::GetMouseWorldY();
-        if (mx != 0.f || my != 0.f) { refX = mx; refY = my; }
-    }
+    const float mouseSX = TestTAB::GetMouseScreenX();
+    const float mouseSY = TestTAB::GetMouseScreenY();
+    const float mouseWX = TestTAB::GetMouseWorldX();
+    const float mouseWY = TestTAB::GetMouseWorldY();
+    const bool  haveW2S = TestTAB::IsW2SValid();
 
-    const float weaponRange = (weapon.rangeTiles > 2.f) ? weapon.rangeTiles : 15.f;
-    const float magnetOffset = CombatTAB::FeatMagnetAim::IsEnabled() ? CombatTAB::FeatMagnetAim::GetVisualOffsetTiles() : 0.f;
-    const float maxWeaponRange = weaponRange + cfg.rangeLeadBias + magnetOffset;
-    const float maxWeaponRangeSq = maxWeaponRange * maxWeaponRange;
-    const float mouseRadiusSq = (useMouseRef && cfg.mouseBoundingEnabled && cfg.mouseBoundingRange > 0.f)
-                                ? (cfg.mouseBoundingRange * cfg.mouseBoundingRange) : 0.f;
+    const float mouseBoundingRangeSq = (useMouseRef && cfg.mouseBoundingEnabled && cfg.mouseBoundingRange > 0.f)
+                                       ? (cfg.mouseBoundingRange * cfg.mouseBoundingRange) : 0.f;
 
-    // ── Four-tier accumulation ───────────────────────────────────────────────
+    // ── Four-tier accumulation (Quest > Normal > Fallback > Invuln) ──────────
     TierState quest, normal, fallback, invuln;
 
     for (const EnemyTracker::Entry& e : snap) {
@@ -134,13 +173,23 @@ Result Select(const Config& cfg,
             const float distToPlayerSq = pDx * pDx + pDy * pDy;
             if (distToPlayerSq > maxWeaponRangeSq) goto next_entry;
 
-            // Mouse bounding check (if ClosestToMouse and bounding enabled)
-            float scoreDistSq = distToPlayerSq;
+            // Optional mouse world bounding
+            if (mouseBoundingRangeSq > 0.f) {
+                const float mwDx = e.x - mouseWX, mwDy = e.y - mouseWY;
+                if ((mwDx * mwDx + mwDy * mwDy) > mouseBoundingRangeSq) goto next_entry;
+            }
+
+            // Metric calculation (claudebawt-deck method)
+            float metric = distToPlayerSq;
             if (useMouseRef) {
-                const float mDx = e.x - refX, mDy = e.y - refY;
-                const float distToMouseSq = mDx * mDx + mDy * mDy;
-                if (mouseRadiusSq > 0.f && distToMouseSq > mouseRadiusSq) goto next_entry;
-                scoreDistSq = distToMouseSq;
+                float esx = 0.f, esy = 0.f;
+                if (haveW2S && ProjectEnemyToScreen(e.x, e.y, playerX, playerY, esx, esy)) {
+                    const float sDx = esx - mouseSX, sDy = esy - mouseSY;
+                    metric = sDx * sDx + sDy * sDy;
+                } else {
+                    const float mwDx = e.x - mouseWX, mwDy = e.y - mouseWY;
+                    metric = mwDx * mwDx + mwDy * mwDy;
+                }
             }
 
             const bool isQuest      = IsQuestType(e.objType);
@@ -148,26 +197,37 @@ Result Select(const Config& cfg,
             const bool isFallback   = IsFallbackType(e.objType);
 
             if (cfg.prioritizeBosses && isQuest && !whitelisted) {
-                TierUpdate(quest, useHighestHp, scoreDistSq, e.hp, e.x, e.y, e.vx, e.vy, e.id, e.objType);
+                TierUpdate(quest, useHighestHp, metric, e.hp, e.x, e.y, e.vx, e.vy, e.id, e.objType);
             } else if (e.isInvulnerable) {
-                TierUpdate(invuln, useHighestHp, scoreDistSq, e.hp, e.x, e.y, e.vx, e.vy, e.id, e.objType);
+                TierUpdate(invuln, useHighestHp, metric, e.hp, e.x, e.y, e.vx, e.vy, e.id, e.objType);
             } else if (isFallback) {
-                TierUpdate(fallback, useHighestHp, scoreDistSq, e.hp, e.x, e.y, e.vx, e.vy, e.id, e.objType);
+                TierUpdate(fallback, useHighestHp, metric, e.hp, e.x, e.y, e.vx, e.vy, e.id, e.objType);
             } else {
-                // Normal tier: non-quest, non-fallback, non-invuln, and
-                // whitelisted-quest or prioritizeBosses-off quest entities
-                TierUpdate(normal, useHighestHp, scoreDistSq, e.hp, e.x, e.y, e.vx, e.vy, e.id, e.objType);
+                TierUpdate(normal, useHighestHp, metric, e.hp, e.x, e.y, e.vx, e.vy, e.id, e.objType);
             }
         }
         next_entry:;
     }
 
-    // ── Priority resolution: quest > normal > fallback > invuln ──────────────
+    // ── Priority resolution ──────────────────────────────────────────────────
     const TierState* winner = nullptr;
     if (quest.found)                          winner = &quest;
     else if (normal.found)                    winner = &normal;
     else if (fallback.found)                  winner = &fallback;
     else if (invuln.found)                    winner = &invuln;
+
+    // Fallback to nearest live enemy if no primary candidate was selected
+    if (!winner) {
+        for (const EnemyTracker::Entry& e : snap) {
+            if (e.hp <= 0) continue;
+            if (cfg.ignoreWalls && !e.hasHealthBar) continue;
+            const float pDx = e.x - playerX, pDy = e.y - playerY;
+            const float distToPlayerSq = pDx * pDx + pDy * pDy;
+            if (distToPlayerSq > maxWeaponRangeSq) continue;
+            TierUpdate(fallback, false, distToPlayerSq, e.hp, e.x, e.y, e.vx, e.vy, e.id, e.objType);
+        }
+        if (fallback.found) winner = &fallback;
+    }
 
     if (!winner) return {};
 
@@ -176,7 +236,7 @@ Result Select(const Config& cfg,
     r.enemyId = winner->bestId;
     r.objType = winner->bestObjType;
 
-    // Apply lead prediction with launch point adjusted for Magnet Aim
+    // Magnet aim launch adjustment
     float launchX = playerX;
     float launchY = playerY;
     if (magnetOffset > 0.f) {
@@ -190,16 +250,24 @@ Result Select(const Config& cfg,
         }
     }
 
-    const float vxTps   = winner->bestVx * 1000.f;
-    const float vyTps   = winner->bestVy * 1000.f;
-    const float spd     = (weapon.avgSpeedTps > 0.1f) ? weapon.avgSpeedTps : 10.f;
-    const float maxLead = (weapon.lifetimeMs  > 0.f)  ? weapon.lifetimeMs / 1000.f : 2.f;
-    if (vxTps != 0.f || vyTps != 0.f)
-        AimMath::QuadraticIntercept(launchX, launchY,
-                                    winner->bestX, winner->bestY,
-                                    vxTps, vyTps, spd,
-                                    r.aimX, r.aimY, maxLead);
-    else { r.aimX = winner->bestX; r.aimY = winner->bestY; }
+    // Lead prediction using claudebawt-deck's travel-time formula
+    float aimX = winner->bestX;
+    float aimY = winner->bestY;
+    const float projSpeed = (weapon.avgSpeedTps > 0.1f) ? weapon.avgSpeedTps : 16.0f;
+    if (projSpeed > 0.1f) {
+        const float dx = aimX - launchX;
+        const float dy = aimY - launchY;
+        const float dist = sqrtf(dx * dx + dy * dy);
+        float travelTime = dist / projSpeed;
+        const float maxTime = (weapon.lifetimeMs > 0.f) ? (weapon.lifetimeMs / 1000.f) : 1.5f;
+        travelTime = (std::min)(travelTime, maxTime);
+        const float lead = std::clamp(cfg.rangeLeadBias, 0.0f, 2.5f);
+        aimX += (winner->bestVx * 1000.f) * travelTime * lead;
+        aimY += (winner->bestVy * 1000.f) * travelTime * lead;
+    }
+
+    r.aimX = aimX;
+    r.aimY = aimY;
 
     return r;
 }
