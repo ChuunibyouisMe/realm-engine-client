@@ -7,6 +7,7 @@
 #include "../../projectiles/ProjectileTrajectory.h"
 #include "AutoAim.h"
 #include "FeatMagnetAim.h"
+#include "GameState.h"
 #include "gui/tabs/WorldTAB.h"
 #include "helpers.h"
 #include "BootGate.h"
@@ -207,27 +208,40 @@ void* __fastcall SpawnProjectileDetour(
 
     float spawnX = startX;
     float spawnY = startY;
+
+    void* localPlayer = GameState::GetLocalPtr();
+    int32_t localId = 0;
+    float playerX = 0.f, playerY = 0.f;
+    if (localPlayer) {
+        __try {
+            uint8_t* lp = reinterpret_cast<uint8_t*>(localPlayer);
+            localId = *reinterpret_cast<int32_t*>(lp + RuntimeOffsets::ObjId);
+            playerX = *reinterpret_cast<float*>(lp + RuntimeOffsets::PosX);
+            playerY = *reinterpret_cast<float*>(lp + RuntimeOffsets::PosY);
+        } __except (EXCEPTION_EXECUTE_HANDLER) { localId = 0; }
+    }
     const int32_t dk = g_LocalDictKey.load(std::memory_order_relaxed);
-    const bool isLocalShot = dk != 0 && (attackerObjId == dk || static_cast<int32_t>(ownerObjId) == dk);
-    if (isLocalShot && CombatTAB::FeatMagnetAim::IsEnabled()) {
-        const float magnetTiles = CombatTAB::FeatMagnetAim::GetVisualOffsetTiles();
+    const bool isLocalShot = !canHitPlayer && !isAbility && (localId == 0 || attackerObjId == localId || static_cast<int32_t>(ownerObjId) == localId || (dk != 0 && (attackerObjId == dk || static_cast<int32_t>(ownerObjId) == dk)));
+
+    if (isLocalShot && AutoAim::IsMagnetAim()) {
+        const float magnetTiles = AutoAim::GetMagnetAimRange();
         bool useTarget = false;
-        if (AutoAim::HasTarget()) {
+        if (AutoAim::HasTarget() && (fabsf(playerX) > 0.1f || fabsf(playerY) > 0.1f)) {
             float targetX = 0.f, targetY = 0.f;
             AutoAim::GetAimTarget(targetX, targetY);
 
-            float entityX = 0.f, entityY = 0.f;
-            LookupShooterOrigin(attackerObjId, ownerObjId, entityX, entityY);
-            if (fabsf(entityX) > 0.5f || fabsf(entityY) > 0.5f) {
-                const float dx = targetX - entityX;
-                const float dy = targetY - entityY;
-                const float dist = sqrtf(dx * dx + dy * dy);
-                if (dist > 1e-4f) {
-                    const float advance = (std::min)(dist, magnetTiles);
-                    spawnX = (dx / dist) * advance;
-                    spawnY = (dy / dist) * advance;
-                    useTarget = true;
+            const float dx = targetX - playerX;
+            const float dy = targetY - playerY;
+            const float dist = sqrtf(dx * dx + dy * dy);
+            if (dist > 1e-4f) {
+                if (dist <= magnetTiles) {
+                    spawnX = dx;
+                    spawnY = dy;
+                } else {
+                    spawnX = (dx / dist) * magnetTiles;
+                    spawnY = (dy / dist) * magnetTiles;
                 }
+                useTarget = true;
             }
         }
         if (!useTarget) {

@@ -12,9 +12,12 @@
 #include "platform/hooks/DirectX.h"
 
 #include <imgui/imgui.h>
+#include <windows.h>
+#include <shlobj.h>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <vector>
 
 namespace CombatTAB {
@@ -33,6 +36,105 @@ static bool  s_renderNormalAimRange = true;
 static bool  s_noclipEnabled       = false;
 static bool  s_renderAimInfo       = true;
 static bool  s_capturingKey        = false;
+
+namespace {
+    char s_cfgPath[MAX_PATH]{};
+
+    const char* GetConfigPath() {
+        if (!s_cfgPath[0]) {
+            if (SUCCEEDED(SHGetFolderPathA(nullptr, CSIDL_PERSONAL, nullptr,
+                                          SHGFP_TYPE_CURRENT, s_cfgPath))) {
+                std::strncat(s_cfgPath, "\\realm_engine_aim.cfg", MAX_PATH - std::strlen(s_cfgPath) - 1);
+            } else {
+                GetModuleFileNameA(nullptr, s_cfgPath, MAX_PATH);
+                char* slash = std::strrchr(s_cfgPath, '\\');
+                if (slash) slash[1] = '\0';
+                std::strncat(s_cfgPath, "realm_engine_aim.cfg", MAX_PATH - std::strlen(s_cfgPath) - 1);
+            }
+        }
+        return s_cfgPath;
+    }
+
+    int ReadInt(const char* key, int defaultValue) {
+        return GetPrivateProfileIntA("AutoAim", key, defaultValue, GetConfigPath());
+    }
+
+    float ReadFloat(const char* key, float defaultValue) {
+        char fallback[32], text[64];
+        std::snprintf(fallback, sizeof(fallback), "%.9g", defaultValue);
+        GetPrivateProfileStringA("AutoAim", key, fallback, text, sizeof(text), GetConfigPath());
+        char* end = nullptr;
+        const float parsed = std::strtof(text, &end);
+        return (end && end != text) ? parsed : defaultValue;
+    }
+
+    void WriteInt(const char* key, int value) {
+        char text[32];
+        std::snprintf(text, sizeof(text), "%d", value);
+        WritePrivateProfileStringA("AutoAim", key, text, GetConfigPath());
+    }
+
+    void WriteFloat(const char* key, float value) {
+        char text[32];
+        std::snprintf(text, sizeof(text), "%.9g", value);
+        WritePrivateProfileStringA("AutoAim", key, text, GetConfigPath());
+    }
+
+    void SaveConfig() {
+        WriteInt("toggleKey", settings.KeyBinds.Toggle_AutoAim);
+        WriteInt("autoAim", s_aimEnabled ? 1 : 0);
+        WriteInt("targetInvulnerable", s_targetInvulnerable ? 1 : 0);
+        WriteInt("predictiveAim", s_predictiveAim ? 1 : 0);
+        WriteFloat("predictiveLead", s_predictiveLead);
+        WriteInt("targetingStyle", s_aimMode);
+        WriteInt("magnetAim", s_magnetAim ? 1 : 0);
+        WriteInt("magnetRangeExt", s_magnetRangeExt ? 1 : 0);
+        WriteFloat("magnetAimRange", s_magnetAimRange);
+        WriteInt("renderMagnetRange", s_renderMagnetRange ? 1 : 0);
+        WriteInt("renderNormalAimRange", s_renderNormalAimRange ? 1 : 0);
+        WriteInt("projectileNoClip", s_noclipEnabled ? 1 : 0);
+        WriteInt("renderAimInfo", s_renderAimInfo ? 1 : 0);
+    }
+
+    bool s_configLoaded = false;
+    void LoadConfig() {
+        if (s_configLoaded) return;
+        s_configLoaded = true;
+
+        settings.KeyBinds.Toggle_AutoAim = static_cast<uint8_t>(ReadInt("toggleKey", settings.KeyBinds.Toggle_AutoAim));
+        s_aimEnabled = ReadInt("autoAim", s_aimEnabled ? 1 : 0) != 0;
+        s_targetInvulnerable = ReadInt("targetInvulnerable", s_targetInvulnerable ? 1 : 0) != 0;
+        s_predictiveAim = ReadInt("predictiveAim", s_predictiveAim ? 1 : 0) != 0;
+        s_predictiveLead = ReadFloat("predictiveLead", s_predictiveLead);
+        s_aimMode = ReadInt("targetingStyle", s_aimMode);
+        s_magnetAim = ReadInt("magnetAim", s_magnetAim ? 1 : 0) != 0;
+        s_magnetRangeExt = ReadInt("magnetRangeExt", s_magnetRangeExt ? 1 : 0) != 0;
+        s_magnetAimRange = ReadFloat("magnetAimRange", s_magnetAimRange);
+        s_renderMagnetRange = ReadInt("renderMagnetRange", s_renderMagnetRange ? 1 : 0) != 0;
+        s_renderNormalAimRange = ReadInt("renderNormalAimRange", s_renderNormalAimRange ? 1 : 0) != 0;
+        s_noclipEnabled = ReadInt("projectileNoClip", s_noclipEnabled ? 1 : 0) != 0;
+        s_renderAimInfo = ReadInt("renderAimInfo", s_renderAimInfo ? 1 : 0) != 0;
+
+        FeatureState::SetAutoAimEnabled(s_aimEnabled);
+        AutoAim::SetShootInvulnerable(s_targetInvulnerable);
+        AutoAim::SetPredictiveAim(s_predictiveAim);
+        AutoAim::SetPredictiveLead(s_predictiveLead);
+        AutoAim::SetMagnetAim(s_magnetAim);
+        AutoAim::SetMagnetRangeExt(s_magnetRangeExt);
+        AutoAim::SetMagnetAimRange(s_magnetAimRange);
+        AutoAim::SetRenderMagnetRange(s_renderMagnetRange);
+        AutoAim::SetRenderNormalAimRange(s_renderNormalAimRange);
+        AutoAim::SetRenderAimInfo(s_renderAimInfo);
+        ProjNoclip::SetEnabled(s_noclipEnabled);
+
+        TargetSelector::Mode resolved = TargetSelector::Mode::ClosestToMouse;
+        if (s_aimMode == 0) resolved = TargetSelector::Mode::ClosestToPlayer;
+        else if (s_aimMode == 1) resolved = TargetSelector::Mode::ClosestToMouse;
+        else if (s_aimMode == 2) resolved = TargetSelector::Mode::HighestHP;
+        FeatureState::SetAutoAimMode(s_aimMode == 0 ? 0 : (s_aimMode == 2 ? 1 : 2));
+        AutoAim::SetAimMode(resolved);
+    }
+}
 
 static bool DrawRangeCircle(float centerX, float centerY, float radius,
                             ImU32 fill, ImU32 shadow, ImU32 outline)
@@ -122,9 +224,12 @@ static void DrawAimRanges()
 
 void Tick(bool /*menuOpen*/)
 {
+    LoadConfig();
+
     if (settings.KeyBinds.Toggle_AutoAim != 0 && KeyBinds::IsKeyPressed(settings.KeyBinds.Toggle_AutoAim) && !s_capturingKey) {
         s_aimEnabled = !s_aimEnabled;
         FeatureState::SetAutoAimEnabled(s_aimEnabled);
+        SaveConfig();
     } else {
         s_aimEnabled = FeatureState::GetAutoAimEnabled();
     }
@@ -182,23 +287,32 @@ void Render()
                     settings.KeyBinds.Toggle_AutoAim = k;
                 }
                 s_capturingKey = false;
+                SaveConfig();
                 break;
             }
         }
     }
 
-    if (ImGui::Checkbox("Auto Aim  ##claudebawtAutoAim", &s_aimEnabled))
+    if (ImGui::Checkbox("Auto Aim  ##claudebawtAutoAim", &s_aimEnabled)) {
         FeatureState::SetAutoAimEnabled(s_aimEnabled);
+        SaveConfig();
+    }
 
-    if (ImGui::Checkbox("Target Invulnerable Enemies##claudebawtTargetInvuln", &s_targetInvulnerable))
+    if (ImGui::Checkbox("Target Invulnerable Enemies##claudebawtTargetInvuln", &s_targetInvulnerable)) {
         AutoAim::SetShootInvulnerable(s_targetInvulnerable);
+        SaveConfig();
+    }
 
-    if (ImGui::Checkbox("Predictive Aim (Lead Moving Enemies)##claudebawtPredictiveAim", &s_predictiveAim))
+    if (ImGui::Checkbox("Predictive Aim (Lead Moving Enemies)##claudebawtPredictiveAim", &s_predictiveAim)) {
         AutoAim::SetPredictiveAim(s_predictiveAim);
+        SaveConfig();
+    }
 
     if (s_predictiveAim) {
-        if (ImGui::SliderFloat("Lead Multiplier##claudebawtLeadMult", &s_predictiveLead, 0.25f, 2.0f, "%.2fx"))
+        if (ImGui::SliderFloat("Lead Multiplier##claudebawtLeadMult", &s_predictiveLead, 0.25f, 2.0f, "%.2fx")) {
             AutoAim::SetPredictiveLead(s_predictiveLead);
+            SaveConfig();
+        }
         ImGui::TextDisabled("Calculates projectile travel time and target velocity to lead fast targets.");
     }
 
@@ -212,29 +326,44 @@ void Render()
         else if (uiStyle == 2) resolved = TargetSelector::Mode::HighestHP;
         FeatureState::SetAutoAimMode(uiStyle == 0 ? 0 : (uiStyle == 2 ? 1 : 2));
         AutoAim::SetAimMode(resolved);
+        SaveConfig();
     }
 
-    if (ImGui::Checkbox("Magnet Aim##claudebawtMagnetAim", &s_magnetAim))
+    if (ImGui::Checkbox("Magnet Aim##claudebawtMagnetAim", &s_magnetAim)) {
         AutoAim::SetMagnetAim(s_magnetAim);
+        SaveConfig();
+    }
 
-    if (ImGui::Checkbox("Magnet Aim Range Extension##claudebawtMagnetRangeExt", &s_magnetRangeExt))
+    if (ImGui::Checkbox("Magnet Aim Range Extension##claudebawtMagnetRangeExt", &s_magnetRangeExt)) {
         AutoAim::SetMagnetRangeExt(s_magnetRangeExt);
+        SaveConfig();
+    }
 
-    if (ImGui::SliderFloat("Magnet Aim Range (Ctrl + Click to type)##claudebawtMagnetRange", &s_magnetAimRange, 1.0f, 2.25f, "%.3f"))
+    if (ImGui::SliderFloat("Magnet Aim Range (Ctrl + Click to type)##claudebawtMagnetRange", &s_magnetAimRange, 1.0f, 2.25f, "%.3f")) {
         AutoAim::SetMagnetAimRange(s_magnetAimRange);
+        SaveConfig();
+    }
 
-    if (ImGui::Checkbox("Show Magnet Aim Range Circle##claudebawtShowMagnetCircle", &s_renderMagnetRange))
+    if (ImGui::Checkbox("Show Magnet Aim Range Circle##claudebawtShowMagnetCircle", &s_renderMagnetRange)) {
         AutoAim::SetRenderMagnetRange(s_renderMagnetRange);
+        SaveConfig();
+    }
 
-    if (ImGui::Checkbox("Show Normal Aim Range Circle##claudebawtShowNormalCircle", &s_renderNormalAimRange))
+    if (ImGui::Checkbox("Show Normal Aim Range Circle##claudebawtShowNormalCircle", &s_renderNormalAimRange)) {
         AutoAim::SetRenderNormalAimRange(s_renderNormalAimRange);
+        SaveConfig();
+    }
     ImGui::TextDisabled("Normal range follows the equipped weapon's projectile reach.");
 
-    if (ImGui::Checkbox("Projectile No Clip##claudebawtProjNoclip", &s_noclipEnabled))
+    if (ImGui::Checkbox("Projectile No Clip##claudebawtProjNoclip", &s_noclipEnabled)) {
         ProjNoclip::SetEnabled(s_noclipEnabled);
+        SaveConfig();
+    }
 
-    if (ImGui::Checkbox("Render Aim Info##claudebawtRenderAimInfo", &s_renderAimInfo))
+    if (ImGui::Checkbox("Render Aim Info##claudebawtRenderAimInfo", &s_renderAimInfo)) {
         AutoAim::SetRenderAimInfo(s_renderAimInfo);
+        SaveConfig();
+    }
 
     if (s_renderAimInfo && s_aimEnabled) {
         ImGui::Indent();
