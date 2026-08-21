@@ -36,6 +36,33 @@ int ReadMessage(HANDLE hPipe, char* buf, int bufSize)
     return (int)msgLen;
 }
 
+static bool SendAllTcp(SOCKET sock, const char* data, int totalBytes)
+{
+    int sent = 0;
+    while (sent < totalBytes) {
+        int n = send(sock, data + sent, totalBytes - sent, 0);
+        if (n > 0) {
+            sent += n;
+        } else if (n == SOCKET_ERROR) {
+            int err = WSAGetLastError();
+            if (err == WSAEWOULDBLOCK) {
+                fd_set writeSet;
+                FD_ZERO(&writeSet);
+                FD_SET(sock, &writeSet);
+                timeval tv{ 0, 100000 }; // Wait up to 100ms
+                int sel = select(0, nullptr, &writeSet, nullptr, &tv);
+                if (sel > 0 && FD_ISSET(sock, &writeSet)) {
+                    continue;
+                }
+            }
+            return false;
+        } else {
+            return false;
+        }
+    }
+    return true;
+}
+
 bool WriteMessage(const IpcTransport& transport, const char* json, int len)
 {
     if (transport.kind == TransportKind::NamedPipe) {
@@ -44,17 +71,8 @@ bool WriteMessage(const IpcTransport& transport, const char* json, int len)
     if (transport.kind == TransportKind::TcpSocket) {
         if (transport.sock == INVALID_SOCKET) return false;
         uint32_t netLen = static_cast<uint32_t>(len);
-        int sentHdr = send(transport.sock, reinterpret_cast<const char*>(&netLen), 4, 0);
-        if (sentHdr != 4) return false;
-        int remaining = len;
-        const char* ptr = json;
-        while (remaining > 0) {
-            int n = send(transport.sock, ptr, remaining, 0);
-            if (n <= 0) return false;
-            ptr += n;
-            remaining -= n;
-        }
-        return true;
+        if (!SendAllTcp(transport.sock, reinterpret_cast<const char*>(&netLen), 4)) return false;
+        return SendAllTcp(transport.sock, json, len);
     }
     return false;
 }

@@ -212,12 +212,12 @@ HRESULT __stdcall dPresent(IDXGISwapChain* __this, UINT SyncInterval, UINT Flags
 				DBG_FILE_LOG("[DirectX] ImGui initialized on hwnd=" << (void*)DirectX::window);
 			}
 		}
-	} else if (targetHwnd && IsWindow(targetHwnd) && (!DirectX::window || !IsWindow(DirectX::window))) {
-		DBG_FILE_LOG("[DirectX] Window handle migrated from " << (void*)DirectX::window << " to " << (void*)targetHwnd);
+	} else if (sd.OutputWindow && IsWindow(sd.OutputWindow) && DirectX::window != sd.OutputWindow) {
+		DBG_FILE_LOG("[DirectX] SwapChain OutputWindow migrated from " << (void*)DirectX::window << " to " << (void*)sd.OutputWindow);
 		if (DirectX::window && IsWindow(DirectX::window) && oWndProc) {
 			SetWindowLongPtr(DirectX::window, GWLP_WNDPROC, (LONG_PTR)oWndProc);
 		}
-		DirectX::window = targetHwnd;
+		DirectX::window = sd.OutputWindow;
 		oWndProc = (WNDPROC)SetWindowLongPtr(DirectX::window, GWLP_WNDPROC, (LONG_PTR)dWndProc);
 		UpdateCachedClientSize();
 		ImGui_ImplWin32_Shutdown();

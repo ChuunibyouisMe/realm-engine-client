@@ -314,6 +314,7 @@ async function main() {
 
   // 2. Create proxy
   const proxy = new Proxy(packetFactory);
+  proxy.setMaxListeners(100);
 
   const dataDir = resolve(ROOT, 'data');
 
@@ -367,7 +368,10 @@ async function main() {
   }
 
   // 5. Plugin manager (load after dashboard is listening — see below)
-  const pluginDir = IS_PROD ? resolve(APP_ROOT, 'dist', 'plugins') : resolve(ROOT, 'plugins');
+  const distPluginsDir = resolve(APP_ROOT, 'dist', 'plugins');
+  const srcPluginsDir = resolve(ROOT, 'plugins');
+  const hasDistPlugins = existsSync(distPluginsDir) && readdirSync(distPluginsDir).some((f) => f.endsWith('.js'));
+  const pluginDir = hasDistPlugins ? distPluginsDir : (IS_PROD ? distPluginsDir : srcPluginsDir);
   // In packaged builds, bundled plugins live in APP_ROOT/dist/plugins.
   // Keep loading those by default so portable can function even if API bundle is empty.
   const allowLocalDiskPlugins = !IS_PROD
