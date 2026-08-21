@@ -223,23 +223,10 @@ void* __fastcall SpawnProjectileDetour(
     const int32_t dk = g_LocalDictKey.load(std::memory_order_relaxed);
     const bool isLocalShot = !canHitPlayer && !isAbility && (localId == 0 || attackerObjId == localId || static_cast<int32_t>(ownerObjId) == localId || (dk != 0 && (attackerObjId == dk || static_cast<int32_t>(ownerObjId) == dk)));
 
-    if (isLocalShot && AutoAim::IsMagnetAim() && AutoAim::HasTarget() && (fabsf(playerX) > 0.1f || fabsf(playerY) > 0.1f)) {
+    if (isLocalShot && AutoAim::IsMagnetAim() && AutoAim::HasTarget()) {
         const float magnetTiles = AutoAim::GetMagnetAimRange();
-        float targetX = 0.f, targetY = 0.f;
-        AutoAim::GetAimTarget(targetX, targetY);
-
-        const float dx = targetX - playerX;
-        const float dy = targetY - playerY;
-        const float dist = sqrtf(dx * dx + dy * dy);
-        if (dist > 1e-4f) {
-            if (dist <= magnetTiles) {
-                spawnX = dx;
-                spawnY = dy;
-            } else if (AutoAim::IsMagnetRangeExt()) {
-                spawnX = (dx / dist) * magnetTiles;
-                spawnY = (dy / dist) * magnetTiles;
-            }
-        }
+        spawnX = cosf(angle) * magnetTiles;
+        spawnY = sinf(angle) * magnetTiles;
     } else {
         const float muzzleTiles = g_localMuzzleOffsetTiles.load(std::memory_order_relaxed);
         if (muzzleTiles > kMuzzleMinTiles + kMuzzleVanillaEps && isLocalShot) {

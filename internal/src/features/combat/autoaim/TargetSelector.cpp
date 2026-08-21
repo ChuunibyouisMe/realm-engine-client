@@ -255,8 +255,8 @@ Result Select(const Config& cfg,
     float aimY = winner->bestY;
     const float projSpeed = (weapon.avgSpeedTps > 0.1f) ? weapon.avgSpeedTps : 16.0f;
     if (cfg.predictiveAim && projSpeed > 0.1f) {
-        const float dx = aimX - launchX;
-        const float dy = aimY - launchY;
+        const float dx = aimX - playerX;
+        const float dy = aimY - playerY;
         const float dist = sqrtf(dx * dx + dy * dy);
         float travelTime = dist / projSpeed;
         const float maxTime = (weapon.lifetimeMs > 0.f) ? (weapon.lifetimeMs / 1000.f) : 1.5f;
