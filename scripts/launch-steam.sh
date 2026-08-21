@@ -42,26 +42,34 @@ for arg in "$@"; do
     fi
 done
 
-# 3. Start Realm Engine Proxy & WebUI in the background if not already running
-if ! pgrep -f "tsx src/index.ts" > /dev/null && ! pgrep -f "dist/app.cjs" > /dev/null; then
-    echo "[Steam Launcher] Starting Realm Engine Proxy & Dashboard..."
-    (cd "$CLIENT_DIR" && npm start -- --dev > /tmp/realm-engine.log 2>&1) &
-fi
+# 3. Locate Node.js binary
+NODE_BIN=""
+for candidate in "$HOME/.local/nodejs/bin/node" "$HOME/.nvm/versions/node"/*/bin/node "$(which node 2>/dev/null)"; do
+    if [ -x "$candidate" ]; then
+        NODE_BIN="$candidate"
+        break
+    fi
+done
 
-# 4. Auto-open the WebUI dashboard in browser as soon as the server is ready
-(
-    for i in {1..30}; do
-        if curl -s -o /dev/null http://localhost:4440 2>/dev/null; then
+# 4. Start Realm Engine Proxy & WebUI in the background if not already running
+if ! pgrep -f "dist/app.cjs" > /dev/null && ! pgrep -f "tsx src/index.ts" > /dev/null; then
+    echo "[Steam Launcher] Starting Realm Engine Proxy & Dashboard..."
+    if [ -n "$NODE_BIN" ] && [ -f "$CLIENT_DIR/dist/app.cjs" ]; then
+        (cd "$CLIENT_DIR" && "$NODE_BIN" "$CLIENT_DIR/dist/app.cjs" --dev > /tmp/realm-engine.log 2>&1) &
+    else
+        (cd "$CLIENT_DIR" && npm start -- --dev > /tmp/realm-engine.log 2>&1) &
+    fi
+    
+    # Wait up to 10 seconds for the proxy (port 2050) & dashboard (port 4440) to be ready
+    echo "[Steam Launcher] Waiting for Realm Engine proxy to start on port 2050..."
+    for i in {1..20}; do
+        if nc -z 127.0.0.1 2050 2>/dev/null || curl -s -o /dev/null http://localhost:4440 2>/dev/null; then
+            echo "[Steam Launcher] Proxy & Dashboard are ready!"
             break
         fi
         sleep 0.5
     done
-    if command -v xdg-open > /dev/null 2>&1; then
-        xdg-open "http://localhost:4440" > /dev/null 2>&1 || true
-    elif command -v python3 > /dev/null 2>&1; then
-        python3 -m webbrowser "http://localhost:4440" > /dev/null 2>&1 || true
-    fi
-) &
+fi
 
 # 5. Configure DLL overrides for Proton / Wine so winhttp.dll and version.dll are loaded
 export WINEDLLOVERRIDES="winhttp=n,b;version=n,b"

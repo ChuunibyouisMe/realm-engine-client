@@ -80,7 +80,6 @@ out
 
 # Nuxt.js build / generate output
 .nuxt
-dist
 .output
 
 # Gatsby files
@@ -172,4 +171,3 @@ README.md
 native/
 assets/internal.bin
 assets/internal.dll
-assets/version.dll
