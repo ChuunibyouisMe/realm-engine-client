@@ -200,12 +200,21 @@ void Uninstall()
 
 bool IsInstalled() { return s_installed; }
 
+void SetEnabled(bool enabled)
+{
+    s_enabled.store(enabled, std::memory_order_relaxed);
+    if (!enabled) {
+        s_hasTarget.store(false, std::memory_order_relaxed);
+    }
+}
+
 void SetTarget(bool hasTarget, float x, float y)
 {
     s_hasTarget.store(hasTarget, std::memory_order_relaxed);
-    s_targetX.store(x, std::memory_order_relaxed);
-    s_targetY.store(y, std::memory_order_relaxed);
-    s_enabled.store(true, std::memory_order_relaxed);
+    if (hasTarget) {
+        s_targetX.store(x, std::memory_order_relaxed);
+        s_targetY.store(y, std::memory_order_relaxed);
+    }
 }
 
 void SetReverseCultStaff(bool v)   { s_reverseCultStaff.store(v, std::memory_order_relaxed); }

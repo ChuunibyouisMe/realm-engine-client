@@ -12,6 +12,7 @@ void Uninstall();
 bool IsInstalled();
 
 // Called by AutoAim coordinator each tick before hooks may fire.
+void SetEnabled(bool enabled);
 void SetTarget(bool hasTarget, float x, float y);
 
 // Weapon-specific angle tweaks

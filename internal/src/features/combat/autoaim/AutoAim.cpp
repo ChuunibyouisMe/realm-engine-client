@@ -144,8 +144,10 @@ void Tick()
 
 void SetEnabled(bool on) {
     s_enabled.store(on, std::memory_order_relaxed);
+    AimHooks::SetEnabled(on);
     if (!on) {
         s_hasTarget.store(false, std::memory_order_relaxed);
+        s_aimFocusId.store(0, std::memory_order_relaxed);
         AimHooks::SetTarget(false, 0.f, 0.f);
     }
 }

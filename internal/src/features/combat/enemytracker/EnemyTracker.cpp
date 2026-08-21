@@ -127,6 +127,12 @@ static void UpdateVelocity(int32_t id, float ex, float ey, ULONGLONG now, void* 
             e.vx = ivx; e.vy = ivy;
         }
         e.t = now;
+    } else if (now - e.t > 200ULL) {
+        // Enemy is stationary — decay velocity to 0 so lead prediction doesn't aim at stale positions
+        e.vx *= 0.5f;
+        e.vy *= 0.5f;
+        if (fabsf(e.vx) < 1e-5f) e.vx = 0.f;
+        if (fabsf(e.vy) < 1e-5f) e.vy = 0.f;
     }
 }
 

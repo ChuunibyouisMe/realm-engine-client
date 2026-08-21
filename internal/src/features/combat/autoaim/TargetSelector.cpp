@@ -111,11 +111,10 @@ Result Select(const Config& cfg,
 
     const float weaponRange = (weapon.rangeTiles > 2.f) ? weapon.rangeTiles : 15.f;
     const float magnetOffset = CombatTAB::FeatMagnetAim::IsEnabled() ? CombatTAB::FeatMagnetAim::GetVisualOffsetTiles() : 0.f;
-    float maxRange = weaponRange + cfg.rangeLeadBias + magnetOffset;
-    if (useMouseRef && cfg.mouseBoundingEnabled && cfg.mouseBoundingRange > 0.f
-        && cfg.mouseBoundingRange < maxRange)
-        maxRange = cfg.mouseBoundingRange;
-    const float maxRangeSq = maxRange * maxRange;
+    const float maxWeaponRange = weaponRange + cfg.rangeLeadBias + magnetOffset;
+    const float maxWeaponRangeSq = maxWeaponRange * maxWeaponRange;
+    const float mouseRadiusSq = (useMouseRef && cfg.mouseBoundingEnabled && cfg.mouseBoundingRange > 0.f)
+                                ? (cfg.mouseBoundingRange * cfg.mouseBoundingRange) : 0.f;
 
     // ── Four-tier accumulation ───────────────────────────────────────────────
     TierState quest, normal, fallback, invuln;
@@ -130,24 +129,34 @@ Result Select(const Config& cfg,
         if (e.isInvulnerable && !cfg.shootInvulnerable && (!cfg.prioritizeBosses || !IsQuestType(e.objType))) goto next_entry;
 
         {
-            const bool isQuest = IsQuestType(e.objType);
-            const float dx = e.x - refX, dy = e.y - refY;
-            const float distSq = dx * dx + dy * dy;
-            if (distSq > maxRangeSq) goto next_entry;
+            // Range check from player (must be in weapon reach)
+            const float pDx = e.x - playerX, pDy = e.y - playerY;
+            const float distToPlayerSq = pDx * pDx + pDy * pDy;
+            if (distToPlayerSq > maxWeaponRangeSq) goto next_entry;
 
+            // Mouse bounding check (if ClosestToMouse and bounding enabled)
+            float scoreDistSq = distToPlayerSq;
+            if (useMouseRef) {
+                const float mDx = e.x - refX, mDy = e.y - refY;
+                const float distToMouseSq = mDx * mDx + mDy * mDy;
+                if (mouseRadiusSq > 0.f && distToMouseSq > mouseRadiusSq) goto next_entry;
+                scoreDistSq = distToMouseSq;
+            }
+
+            const bool isQuest      = IsQuestType(e.objType);
             const bool whitelisted  = IsWhitelistedType(e.objType);
             const bool isFallback   = IsFallbackType(e.objType);
 
             if (cfg.prioritizeBosses && isQuest && !whitelisted) {
-                TierUpdate(quest, useHighestHp, distSq, e.hp, e.x, e.y, e.vx, e.vy, e.id, e.objType);
+                TierUpdate(quest, useHighestHp, scoreDistSq, e.hp, e.x, e.y, e.vx, e.vy, e.id, e.objType);
             } else if (e.isInvulnerable) {
-                TierUpdate(invuln, useHighestHp, distSq, e.hp, e.x, e.y, e.vx, e.vy, e.id, e.objType);
+                TierUpdate(invuln, useHighestHp, scoreDistSq, e.hp, e.x, e.y, e.vx, e.vy, e.id, e.objType);
             } else if (isFallback) {
-                TierUpdate(fallback, useHighestHp, distSq, e.hp, e.x, e.y, e.vx, e.vy, e.id, e.objType);
+                TierUpdate(fallback, useHighestHp, scoreDistSq, e.hp, e.x, e.y, e.vx, e.vy, e.id, e.objType);
             } else {
                 // Normal tier: non-quest, non-fallback, non-invuln, and
                 // whitelisted-quest or prioritizeBosses-off quest entities
-                TierUpdate(normal, useHighestHp, distSq, e.hp, e.x, e.y, e.vx, e.vy, e.id, e.objType);
+                TierUpdate(normal, useHighestHp, scoreDistSq, e.hp, e.x, e.y, e.vx, e.vy, e.id, e.objType);
             }
         }
         next_entry:;
