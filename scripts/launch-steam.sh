@@ -28,10 +28,12 @@ install_hook_dlls() {
 
 # Search active Steam compatdata prefixes and common paths
 for prefix_dir in "$HOME/.local/share/Steam/steamapps/compatdata"/* "/run/media"/*/*/"SteamLibrary/steamapps/compatdata"/* "$HOME/.var/app/com.valvesoftware.Steam/data/Steam/steamapps/compatdata"/*; do
-    prod_path="$prefix_dir/pfx/drive_c/users/steamuser/AppData/Local/RealmOfTheMadGod/Production"
-    if [ -d "$prod_path" ]; then
-        install_hook_dlls "$prod_path"
-    fi
+    for user_dir in "$prefix_dir/pfx/drive_c/users"/*; do
+        prod_path="$user_dir/AppData/Local/RealmOfTheMadGod/Production"
+        if [ -d "$prod_path" ]; then
+            install_hook_dlls "$prod_path"
+        fi
+    done
 done
 
 # If passed an explicit executable path in arguments
