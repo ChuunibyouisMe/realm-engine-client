@@ -178,13 +178,22 @@ if (process.platform === 'win32') {
   }
 } else {
   // Non-Windows (Linux / macOS): use llvm-mingw cross-compiler script
+  const skipDll = process.argv.includes('--skip-dll');
   const linuxBuildScript = join(INTERNAL_DIR, 'build-linux.sh');
-  log(`Using Linux cross-compilation build script: ${linuxBuildScript}`);
-  try {
-    execSync(`bash "${linuxBuildScript}"`, { stdio: 'inherit', timeout: 600000 });
-  } catch (err) {
-    console.error('[build-prod] ERROR: Linux DLL cross-compilation failed.');
-    process.exit(1);
+  if (skipDll) {
+    log('Skipping DLL compilation (--skip-dll specified).');
+  } else {
+    log(`Using Linux cross-compilation build script: ${linuxBuildScript}`);
+    try {
+      execSync(`bash "${linuxBuildScript}"`, { stdio: 'inherit', timeout: 600000 });
+    } catch (err) {
+      if (existsSync(DLL_DEST)) {
+        log(`WARNING: Linux DLL cross-compilation failed, but existing ${DLL_DEST} found. Using pre-compiled DLL.`);
+      } else {
+        console.error('[build-prod] ERROR: Linux DLL cross-compilation failed and no pre-compiled version.dll found.');
+        process.exit(1);
+      }
+    }
   }
 }
 
