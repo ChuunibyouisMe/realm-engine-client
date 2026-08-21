@@ -212,12 +212,12 @@ HRESULT __stdcall dPresent(IDXGISwapChain* __this, UINT SyncInterval, UINT Flags
 				DBG_FILE_LOG("[DirectX] ImGui initialized on hwnd=" << (void*)DirectX::window);
 			}
 		}
-	} else if (sd.OutputWindow && IsWindow(sd.OutputWindow) && DirectX::window != sd.OutputWindow) {
-		DBG_FILE_LOG("[DirectX] SwapChain OutputWindow migrated from " << (void*)DirectX::window << " to " << (void*)sd.OutputWindow);
+	} else if (targetHwnd && IsWindow(targetHwnd) && DirectX::window != targetHwnd) {
+		DBG_FILE_LOG("[DirectX] Window migrated from " << (void*)DirectX::window << " to " << (void*)targetHwnd);
 		if (DirectX::window && IsWindow(DirectX::window) && oWndProc) {
 			SetWindowLongPtr(DirectX::window, GWLP_WNDPROC, (LONG_PTR)oWndProc);
 		}
-		DirectX::window = sd.OutputWindow;
+		DirectX::window = targetHwnd;
 		oWndProc = (WNDPROC)SetWindowLongPtr(DirectX::window, GWLP_WNDPROC, (LONG_PTR)dWndProc);
 		UpdateCachedClientSize();
 		ImGui_ImplWin32_Shutdown();
@@ -242,6 +242,11 @@ HRESULT __stdcall dPresent(IDXGISwapChain* __this, UINT SyncInterval, UINT Flags
 	}
 
 	if (settings.ImGuiInitialized && DirectX::hRenderSemaphore && WaitForSingleObject(DirectX::hRenderSemaphore, 0) == WAIT_OBJECT_0) {
+		struct SemaphoreGuard {
+			HANDLE h;
+			~SemaphoreGuard() { if (h) ReleaseSemaphore(h, 1, nullptr); }
+		} semGuard{ DirectX::hRenderSemaphore };
+
 		ID3D11Device* curDevice = nullptr;
 		if (SUCCEEDED(__this->GetDevice(__uuidof(ID3D11Device), (void**)&curDevice)) && curDevice) {
 			if (!DirectX::pDevice || DirectX::pDevice != curDevice) {
@@ -271,23 +276,20 @@ HRESULT __stdcall dPresent(IDXGISwapChain* __this, UINT SyncInterval, UINT Flags
 		}
 
 		if (!pRenderTargetView) {
-			ReleaseSemaphore(DirectX::hRenderSemaphore, 1, nullptr);
 			return oPresent(__this, SyncInterval, Flags);
 		}
 
 		ImGui_ImplDX11_NewFrame();
 		ImGui_ImplWin32_NewFrame();
 
-		// Ensure valid DisplaySize even if window rect temporarily reports 0 during scene transitions
+		// Match swapchain backbuffer dimensions precisely
 		ImGuiIO& io = ImGui::GetIO();
-		if (io.DisplaySize.x <= 0.0f || io.DisplaySize.y <= 0.0f) {
-			if (sd.BufferDesc.Width > 0 && sd.BufferDesc.Height > 0) {
-				io.DisplaySize = ImVec2(static_cast<float>(sd.BufferDesc.Width), static_cast<float>(sd.BufferDesc.Height));
-			} else if (s_cachedScreenW > 0.f && s_cachedScreenH > 0.f) {
-				io.DisplaySize = ImVec2(s_cachedScreenW, s_cachedScreenH);
-			} else {
-				io.DisplaySize = ImVec2(1280.f, 800.f);
-			}
+		if (sd.BufferDesc.Width > 0 && sd.BufferDesc.Height > 0) {
+			io.DisplaySize = ImVec2(static_cast<float>(sd.BufferDesc.Width), static_cast<float>(sd.BufferDesc.Height));
+		} else if (s_cachedScreenW > 0.f && s_cachedScreenH > 0.f) {
+			io.DisplaySize = ImVec2(s_cachedScreenW, s_cachedScreenH);
+		} else {
+			io.DisplaySize = ImVec2(1280.f, 800.f);
 		}
 
 		ImGui::NewFrame();
@@ -386,7 +388,6 @@ HRESULT __stdcall dPresent(IDXGISwapChain* __this, UINT SyncInterval, UINT Flags
 		ImGui::Render();
 		DirectX::pContext->OMSetRenderTargets(1, &pRenderTargetView, nullptr);
 		ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
-		ReleaseSemaphore(DirectX::hRenderSemaphore, 1, nullptr);
 	}
 	return oPresent(__this, SyncInterval, Flags);
 }
