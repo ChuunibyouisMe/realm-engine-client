@@ -2,11 +2,13 @@
 
 #include "TargetSelector.h"
 #include "AimMath.h"
+#include "FeatMagnetAim.h"
 #include "features/combat/enemytracker/EnemyTracker.h"
 #include "gui/tabs/TestTAB.h"
 
 #include <cmath>
 #include <cstdint>
+#include <algorithm>
 
 namespace {
 
@@ -108,7 +110,8 @@ Result Select(const Config& cfg,
     }
 
     const float weaponRange = (weapon.rangeTiles > 2.f) ? weapon.rangeTiles : 15.f;
-    float maxRange = weaponRange + cfg.rangeLeadBias;
+    const float magnetOffset = CombatTAB::FeatMagnetAim::IsEnabled() ? CombatTAB::FeatMagnetAim::GetVisualOffsetTiles() : 0.f;
+    float maxRange = weaponRange + cfg.rangeLeadBias + magnetOffset;
     if (useMouseRef && cfg.mouseBoundingEnabled && cfg.mouseBoundingRange > 0.f
         && cfg.mouseBoundingRange < maxRange)
         maxRange = cfg.mouseBoundingRange;
@@ -165,13 +168,26 @@ Result Select(const Config& cfg,
     r.enemyId = winner->bestId;
     r.objType = winner->bestObjType;
 
-    // Apply lead prediction
+    // Apply lead prediction with launch point adjusted for Magnet Aim
+    float launchX = playerX;
+    float launchY = playerY;
+    if (magnetOffset > 0.f) {
+        const float dx = winner->bestX - playerX;
+        const float dy = winner->bestY - playerY;
+        const float len = sqrtf(dx * dx + dy * dy);
+        if (len > 0.1f) {
+            const float advance = (std::min)(magnetOffset, len * 0.9f);
+            launchX += (dx / len) * advance;
+            launchY += (dy / len) * advance;
+        }
+    }
+
     const float vxTps   = winner->bestVx * 1000.f;
     const float vyTps   = winner->bestVy * 1000.f;
     const float spd     = (weapon.avgSpeedTps > 0.1f) ? weapon.avgSpeedTps : 10.f;
     const float maxLead = (weapon.lifetimeMs  > 0.f)  ? weapon.lifetimeMs / 1000.f : 2.f;
     if (vxTps != 0.f || vyTps != 0.f)
-        AimMath::QuadraticIntercept(playerX, playerY,
+        AimMath::QuadraticIntercept(launchX, launchY,
                                     winner->bestX, winner->bestY,
                                     vxTps, vyTps, spd,
                                     r.aimX, r.aimY, maxLead);

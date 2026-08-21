@@ -7,7 +7,7 @@ namespace CombatTAB {
 namespace FeatMagnetAim {
 
 static bool  s_enabled = false;
-static constexpr float kVisualOffsetTiles = 2.0f;
+static float s_visualOffsetTiles = 2.5f;
 
 void Tick(bool /*menuOpen*/)
 {
@@ -20,7 +20,7 @@ bool IsEnabled()
 
 float GetVisualOffsetTiles()
 {
-    return kVisualOffsetTiles;
+    return s_visualOffsetTiles;
 }
 
 void Render()
@@ -29,9 +29,11 @@ void Render()
     ImGui::Spacing();
 
     ImGui::Checkbox("Enable##magnetAimEnable", &s_enabled);
-    ImGui::TextDisabled("Internal-only visual path for local player projectiles.");
-    ImGui::TextDisabled("Moves the local SpawnProjectile origin %.1f tiles toward the AutoAim target when one exists.", static_cast<double>(kVisualOffsetTiles));
-    ImGui::TextDisabled("Fallback when no AutoAim target exists: %.1f tiles along the fired angle.", static_cast<double>(kVisualOffsetTiles));
+    if (s_enabled) {
+        ImGui::SliderFloat("Offset Distance##magnetOffset", &s_visualOffsetTiles, 0.5f, 10.0f, "%.1f tiles");
+    }
+    ImGui::TextDisabled("Advances the local SpawnProjectile origin toward the target.");
+    ImGui::TextDisabled("Extends effective range and reduces projectile flight time.");
 }
 
 } // namespace FeatMagnetAim
