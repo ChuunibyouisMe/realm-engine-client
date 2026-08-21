@@ -3663,16 +3663,23 @@ export class DevServer {
             result,
           }));
         } else if (msg.type === 'requestObjects') {
-          if (this.worldState && this.gameData) {
-            const payload = this.worldState.getObjectsForDashboard(this.gameData);
-            const beaconTypes = this.gameData.getBeaconTypes();
-            const objectsMsg = JSON.stringify({ type: 'objectsData', ...payload, beaconTypes });
-            if (ws.readyState === WebSocket.OPEN) {
-              ws.send(objectsMsg);
+          try {
+            if (this.worldState && this.gameData) {
+              const payload = this.worldState.getObjectsForDashboard(this.gameData);
+              const beaconTypes = this.gameData.getBeaconTypes();
+              const objectsMsg = JSON.stringify({ type: 'objectsData', ...payload, beaconTypes });
+              if (ws.readyState === WebSocket.OPEN) {
+                ws.send(objectsMsg);
+              }
+            } else {
+              const emptyMsg = JSON.stringify({ type: 'objectsData', portals: [], beacons: [], categories: [], beaconTypes: [] });
+              if (ws.readyState === WebSocket.OPEN) ws.send(emptyMsg);
             }
-          } else {
-            const emptyMsg = JSON.stringify({ type: 'objectsData', portals: [], beacons: [], categories: [], beaconTypes: [] });
-            if (ws.readyState === WebSocket.OPEN) ws.send(emptyMsg);
+          } catch (err) {
+            this.log.error(`[DevServer] Error handling requestObjects:`, err);
+            if (ws.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify({ type: 'objectsData', portals: [], beacons: [], categories: [], beaconTypes: [] }));
+            }
           }
         } else if (msg.type === 'requestGameWikiCatalog') {
           if (msg.force === true) {

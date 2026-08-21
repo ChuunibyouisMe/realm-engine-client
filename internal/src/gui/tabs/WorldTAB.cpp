@@ -354,33 +354,35 @@ static void WalkDict(void* dictPtr, int maxEntries, Cb cb)
 {
     if (!AddrValid(dictPtr)) return;
 
-    void*   entriesArr = nullptr;
-    int32_t count      = 0;
-    SafeRead(dictPtr, OFF_DICT_ENTRIES, entriesArr);
-    SafeRead(dictPtr, OFF_DICT_COUNT,   count);
-    if (!AddrValid(entriesArr)) return;
+    Resolver::Protection::safe_call([&]() {
+        void*   entriesArr = nullptr;
+        int32_t count      = 0;
+        SafeRead(dictPtr, OFF_DICT_ENTRIES, entriesArr);
+        SafeRead(dictPtr, OFF_DICT_COUNT,   count);
+        if (!AddrValid(entriesArr)) return;
 
-    int32_t maxLen = 0;
-    SafeRead(entriesArr, OFF_ARR_MAXLEN, maxLen);
-    if (maxLen <= 0 || maxLen > 65536) maxLen = maxEntries;
-    if (count  <= 0 || count  > maxLen) count = maxLen;
+        int32_t maxLen = 0;
+        SafeRead(entriesArr, OFF_ARR_MAXLEN, maxLen);
+        if (maxLen <= 0 || maxLen > 65536) maxLen = maxEntries;
+        if (count  <= 0 || count  > maxLen) count = maxLen;
 
-    for (int32_t i = 0; i < count; ++i) {
-        const uint8_t* entry = reinterpret_cast<const uint8_t*>(entriesArr)
-                             + OFF_ARR_DATA
-                             + static_cast<size_t>(i) * DICT_ENTRY_SIZE;
-        int32_t hashCode = 0;
-        if (!SafeRead(entry, OFF_ENTRY_HASH, hashCode)) continue;
-        if (hashCode < 0) continue;
+        for (int32_t i = 0; i < count; ++i) {
+            const uint8_t* entry = reinterpret_cast<const uint8_t*>(entriesArr)
+                                 + OFF_ARR_DATA
+                                 + static_cast<size_t>(i) * DICT_ENTRY_SIZE;
+            int32_t hashCode = 0;
+            if (!SafeRead(entry, OFF_ENTRY_HASH, hashCode)) continue;
+            if (hashCode < 0) continue;
 
-        int32_t key   = 0;
-        void*   value = nullptr;
-        if (!SafeRead(entry, OFF_ENTRY_KEY,   key))   continue;
-        if (!SafeRead(entry, OFF_ENTRY_VALUE, value)) continue;
-        if (!AddrValid(value))                         continue;
+            int32_t key   = 0;
+            void*   value = nullptr;
+            if (!SafeRead(entry, OFF_ENTRY_KEY,   key))   continue;
+            if (!SafeRead(entry, OFF_ENTRY_VALUE, value)) continue;
+            if (!AddrValid(value))                         continue;
 
-        cb(key, value);
-    }
+            cb(key, value);
+        }
+    });
 }
 
 // HBEAKBIHANL (runtime projectile) — klass cached here; FOMOIBCKIFP offset via RuntimeOffsets.
@@ -416,7 +418,12 @@ static void TryAppendHbeakFromElem(
     void* klassRaw = nullptr;
     if (!SafeRead(elem, 0u, klassRaw) || !AddrValid(klassRaw)) return;
     auto* elemKlass = reinterpret_cast<Il2CppClass*>(klassRaw);
-    if (!il2cpp_class_is_assignable_from(hbeakKlass, elemKlass)) return;
+    
+    bool isHbeak = false;
+    Resolver::Protection::safe_call([&]() {
+        isHbeak = il2cpp_class_is_assignable_from(hbeakKlass, elemKlass);
+    });
+    if (!isHbeak) return;
 
     const uintptr_t pu = reinterpret_cast<uintptr_t>(elem);
     if (seenPtrs.count(pu)) return;
@@ -499,24 +506,26 @@ static void TryMergeKjmonProjectileList(
 {
     if (!AddrValid(listObj) || !hbeakKlass) return;
 
-    int32_t listSize = 0;
-    void*   itemsArr = nullptr;
-    if (!SafeRead(listObj, OFF_LIST_SIZE, listSize)) return;
-    if (!SafeRead(listObj, OFF_LIST_ITEMS, itemsArr)) return;
-    if (!AddrValid(itemsArr) || listSize <= 0 || listSize > 8192) return;
+    Resolver::Protection::safe_call([&]() {
+        int32_t listSize = 0;
+        void*   itemsArr = nullptr;
+        if (!SafeRead(listObj, OFF_LIST_SIZE, listSize)) return;
+        if (!SafeRead(listObj, OFF_LIST_ITEMS, itemsArr)) return;
+        if (!AddrValid(itemsArr) || listSize <= 0 || listSize > 8192) return;
 
-    int32_t arrMax = 0;
-    SafeRead(itemsArr, OFF_ARR_MAXLEN, arrMax);
-    if (arrMax <= 0 || arrMax > 65536) arrMax = listSize;
-    int32_t cap = (listSize < arrMax) ? listSize : arrMax;
+        int32_t arrMax = 0;
+        SafeRead(itemsArr, OFF_ARR_MAXLEN, arrMax);
+        if (arrMax <= 0 || arrMax > 65536) arrMax = listSize;
+        int32_t cap = (listSize < arrMax) ? listSize : arrMax;
 
-    const uint8_t* itemBase = reinterpret_cast<const uint8_t*>(itemsArr) + OFF_ARR_DATA;
-    for (int32_t i = 0; i < cap; ++i) {
-        void* elem = nullptr;
-        if (!SafeRead(itemBase + static_cast<size_t>(i) * sizeof(void*), 0u, elem) || !AddrValid(elem))
-            continue;
-        TryAppendHbeakFromElem(elem, hbeakKlass, offProjPropsField, out, seenPtrs);
-    }
+        const uint8_t* itemBase = reinterpret_cast<const uint8_t*>(itemsArr) + OFF_ARR_DATA;
+        for (int32_t i = 0; i < cap; ++i) {
+            void* elem = nullptr;
+            if (!SafeRead(itemBase + static_cast<size_t>(i) * sizeof(void*), 0u, elem) || !AddrValid(elem))
+                continue;
+            TryAppendHbeakFromElem(elem, hbeakKlass, offProjPropsField, out, seenPtrs);
+        }
+    });
 }
 
 static void MergeProjectilePoolsFromWorldManager(void* worldMgr, std::vector<WorldProjectile>& out,
@@ -648,22 +657,28 @@ static void ReadTileProps(void* tp, WorldTile& t)
     }
 }
 
+static std::mutex s_refreshMutex;
+
 // Core refresh
 // ─────────────────────────────────────────────────────────────────────────────
 static void DoRefresh()
 {
-    g_entities.clear();
-    g_tiles.clear();
-    g_projectiles.clear();
-    g_localX = g_localY = 0.f;
+    std::unique_lock<std::mutex> lk(s_refreshMutex, std::try_to_lock);
+    if (!lk.owns_lock()) return;
 
-    // ── Resolve via GameState (single shared AppMgr/WorldMgr cache) ─────────
-    void* appMgr = GameState::GetAppMgr();
-    if (!appMgr) {
-        g_status = "Waiting for GameState to resolve ApplicationManager...";
-        g_statusOk = false; return;
-    }
-    g_appMgrPtr = reinterpret_cast<uintptr_t>(appMgr);
+    Resolver::Protection::safe_call([&]() {
+        g_entities.clear();
+        g_tiles.clear();
+        g_projectiles.clear();
+        g_localX = g_localY = 0.f;
+
+        // ── Resolve via GameState (single shared AppMgr/WorldMgr cache) ─────────
+        void* appMgr = GameState::GetAppMgr();
+        if (!appMgr) {
+            g_status = "Waiting for GameState to resolve ApplicationManager...";
+            g_statusOk = false; return;
+        }
+        g_appMgrPtr = reinterpret_cast<uintptr_t>(appMgr);
 
     void* worldMgr = GameState::GetWorldMgr();
     if (!worldMgr) {
@@ -862,6 +877,7 @@ static void DoRefresh()
         ProjectileTracking::CountValidForDiagnostics(), OFF_WM_MAPOBJ_DICT_A, OFF_WM_KJMON_LIST);
     g_status   = buf;
     g_statusOk = true;
+    });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
