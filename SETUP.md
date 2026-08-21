@@ -62,5 +62,17 @@ Add `-- --force` to re-fetch after a game update.
 
 ## 3. Build
 
-Once steps 1–2 are done, build as normal — see the README / `client/package.json`
-scripts (`npm run build:native`, `npm run build:prod`, `npm run dist`, …).
+### Linux & Steam Deck:
+```bash
+# Build the C++ injection DLL (assets/version.dll)
+./internal/build-linux.sh
+
+# Build the client
+cd client
+npm install
+npm run build
+```
+For Proton / Steam Deck setup, see [docs/STEAM_DECK.md](docs/STEAM_DECK.md).
+
+### Windows:
+Build as normal — see `client/package.json` scripts (`npm run build`, `npm run build:prod`, `npm run dist`, …).

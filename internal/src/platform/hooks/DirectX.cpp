@@ -2,6 +2,7 @@
 #include <cstdio>
 
 #include "DirectX.h"
+#include "DbgFileLog.h"
 #include "settings.h"
 #include "gui/tabs/TestTAB.h"
 #include "gui/tabs/VisualsTAB.h"
@@ -13,7 +14,7 @@
 #include <atomic>
 #include <chrono>
 #include <thread>
-#include <Il2CppResolver.h>
+#include "Il2CppResolver.h"
 #include "AutoAim.h"
 #include "RuntimeOffsets.h"
 #include "BootGate.h"
@@ -116,15 +117,18 @@ LRESULT __stdcall dWndProc(const HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPa
 	KeyBinds::WndProc(uMsg, wParam, lParam);
 
 	if (settings.ImGuiInitialized && ImGui::GetCurrentContext()) {
-		ImGui_ImplWin32_WndProcHandler(hWnd, uMsg, wParam, lParam);
+		const bool isKey   = (uMsg == WM_KEYDOWN    || uMsg == WM_KEYUP ||
+		                      uMsg == WM_SYSKEYDOWN || uMsg == WM_SYSKEYUP ||
+		                      uMsg == WM_CHAR);
+		const bool isToggle = isKey && wParam == settings.KeyBinds.Toggle_Menu;
+
+		if (!isToggle) {
+			ImGui_ImplWin32_WndProcHandler(hWnd, uMsg, wParam, lParam);
+		}
 
 		if (settings.bShowMenu) {
 			const ImGuiIO& io = ImGui::GetIO();
 			const bool isMouse = (uMsg >= WM_MOUSEFIRST && uMsg <= WM_MOUSELAST);
-			const bool isKey   = (uMsg == WM_KEYDOWN    || uMsg == WM_KEYUP ||
-			                      uMsg == WM_SYSKEYDOWN || uMsg == WM_SYSKEYUP ||
-			                      uMsg == WM_CHAR);
-			const bool isToggle = isKey && wParam == settings.KeyBinds.Toggle_Menu;
 			if ((isMouse && io.WantCaptureMouse) ||
 			    (isKey && !isToggle && io.WantCaptureKeyboard))
 				return 1;
@@ -144,6 +148,8 @@ LRESULT __stdcall dWndProc(const HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPa
 HRESULT __stdcall dPresent(IDXGISwapChain* __this, UINT SyncInterval, UINT Flags) {
 	if (g_unloading)
 		return oPresent(__this, SyncInterval, Flags);
+
+	Resolver::Protection::EnsureThreadAttached();
 
 	// DEBUG BISECT #2: SpeedHack::Tick lazily installs IL2CPP hooks via
 	// Detours every frame on the render thread. Detours' transaction
@@ -197,29 +203,57 @@ HRESULT __stdcall dPresent(IDXGISwapChain* __this, UINT SyncInterval, UINT Flags
 	BootGate::Tick();        // boot gating loop (runs EnsureAll + audit)
 	DiagBridge::Tick();      // mirror live state to %LOCALAPPDATA%\RealmEngine\diag.json
 
-	static std::once_flag init_flag;
-	std::call_once(init_flag, [&]() {
-		__this->GetDevice(__uuidof(ID3D11Device), (void**)&DirectX::pDevice);
-		DirectX::pDevice->GetImmediateContext(&DirectX::pContext);
-		DXGI_SWAP_CHAIN_DESC sd; __this->GetDesc(&sd);
-		DirectX::window = sd.OutputWindow;
-		UpdateCachedClientSize();
+	DXGI_SWAP_CHAIN_DESC sd{};
+	__this->GetDesc(&sd);
 
-		ImGui::CreateContext();
-		ImGui_ImplWin32_Init(DirectX::window);
-		ImGui_ImplDX11_Init(DirectX::pDevice, DirectX::pContext);
+	if (!settings.ImGuiInitialized) {
+		HWND targetHwnd = sd.OutputWindow;
+		if (!targetHwnd || !IsWindow(targetHwnd)) targetHwnd = GetActiveWindow();
+		if (!targetHwnd || !IsWindow(targetHwnd)) targetHwnd = FindWindowA("UnityWndClass", nullptr);
 
-		oWndProc = (WNDPROC)SetWindowLongPtr(DirectX::window, GWLP_WNDPROC, (LONG_PTR)dWndProc);
-		DirectX::hRenderSemaphore = CreateSemaphore(nullptr, 1, 1, nullptr);
-		settings.ImGuiInitialized = true;
-		});
+		if (targetHwnd && IsWindow(targetHwnd)) {
+			DirectX::window = targetHwnd;
+			__this->GetDevice(__uuidof(ID3D11Device), (void**)&DirectX::pDevice);
+			if (DirectX::pDevice) {
+				DirectX::pDevice->GetImmediateContext(&DirectX::pContext);
+				UpdateCachedClientSize();
 
-	if (WaitForSingleObject(DirectX::hRenderSemaphore, 0) == WAIT_OBJECT_0) {
-		if (!pRenderTargetView) {
+				ImGui::CreateContext();
+				ImGui_ImplWin32_Init(DirectX::window);
+				ImGui_ImplDX11_Init(DirectX::pDevice, DirectX::pContext);
+
+				oWndProc = (WNDPROC)SetWindowLongPtr(DirectX::window, GWLP_WNDPROC, (LONG_PTR)dWndProc);
+				if (!DirectX::hRenderSemaphore) {
+					DirectX::hRenderSemaphore = CreateSemaphore(nullptr, 1, 1, nullptr);
+				}
+				settings.ImGuiInitialized = true;
+				DBG_FILE_LOG("[DirectX] ImGui initialized on hwnd=" << (void*)DirectX::window);
+			}
+		}
+	} else if (sd.OutputWindow && IsWindow(sd.OutputWindow) && DirectX::window != sd.OutputWindow) {
+		if (!IsWindow(DirectX::window)) {
+			DBG_FILE_LOG("[DirectX] Window handle migrated from " << (void*)DirectX::window << " to " << (void*)sd.OutputWindow);
+			DirectX::window = sd.OutputWindow;
+			if (oWndProc) {
+				SetWindowLongPtr(DirectX::window, GWLP_WNDPROC, (LONG_PTR)dWndProc);
+			}
+			ImGui_ImplWin32_Shutdown();
+			ImGui_ImplWin32_Init(DirectX::window);
+		}
+	}
+
+	if (settings.ImGuiInitialized && DirectX::hRenderSemaphore && WaitForSingleObject(DirectX::hRenderSemaphore, 0) == WAIT_OBJECT_0) {
+		if (!pRenderTargetView && DirectX::pDevice) {
 			ID3D11Texture2D* pBackBuffer = nullptr;
-			__this->GetBuffer(0, __uuidof(ID3D11Texture2D), (void**)&pBackBuffer);
-			DirectX::pDevice->CreateRenderTargetView(pBackBuffer, nullptr, &pRenderTargetView);
-			pBackBuffer->Release();
+			if (SUCCEEDED(__this->GetBuffer(0, __uuidof(ID3D11Texture2D), (void**)&pBackBuffer)) && pBackBuffer) {
+				DirectX::pDevice->CreateRenderTargetView(pBackBuffer, nullptr, &pRenderTargetView);
+				pBackBuffer->Release();
+			}
+		}
+
+		if (!pRenderTargetView) {
+			ReleaseSemaphore(DirectX::hRenderSemaphore, 1, nullptr);
+			return oPresent(__this, SyncInterval, Flags);
 		}
 
 		ImGui_ImplDX11_NewFrame();

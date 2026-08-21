@@ -226,17 +226,7 @@ export class InternalBridge extends EventEmitter {
       this.stopped = true;
       return;
     }
-    if (!isWindowsNamedPipeHost()) {
-      if (!this.warnedNonWindowsPipe) {
-        this.warnedNonWindowsPipe = true;
-        Logger.warn(
-          'InternalBridge',
-          `DLL pipe bridge is unavailable: not on Windows. RotMG Exalt + injected DLL only connect on Windows.`,
-        );
-      }
-      return;
-    }
-
+    const isWindows = isWindowsNamedPipeHost();
     const server = createServer((sock) => {
       // If a session is already active, drop the old one (DLL may have re-injected).
       if (this.socket && !this.socket.destroyed) {
@@ -247,16 +237,23 @@ export class InternalBridge extends EventEmitter {
     });
 
     server.on('error', (err) => {
-      Logger.error('InternalBridge', `Pipe server error: ${(err as Error).message}`);
+      Logger.error('InternalBridge', `Bridge server error: ${(err as Error).message}`);
     });
 
-    server.listen(PIPE_PATH, () => {
-      Logger.log('InternalBridge', `Pipe server listening on ${PIPE_PATH} — waiting for DLL to connect.`);
-      // Unblock the DLL's load gate so it can call Run() immediately.
-      // The HELLO packet hook also signals this, but calling here covers the
-      // case where the DLL is injected after the game has already entered a realm.
-      signalHelloEvent();
-    });
+    if (isWindows) {
+      server.listen(PIPE_PATH, () => {
+        Logger.log('InternalBridge', `Pipe server listening on ${PIPE_PATH} — waiting for DLL to connect.`);
+        // Unblock the DLL's load gate so it can call Run() immediately.
+        signalHelloEvent();
+      });
+    } else {
+      const TCP_PORT = 4242;
+      const TCP_HOST = '127.0.0.1';
+      server.listen(TCP_PORT, TCP_HOST, () => {
+        Logger.log('InternalBridge', `TCP bridge server listening on ${TCP_HOST}:${TCP_PORT} — waiting for DLL to connect.`);
+        signalHelloEvent();
+      });
+    }
 
     this.server = server;
   }

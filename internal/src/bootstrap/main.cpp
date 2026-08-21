@@ -2,9 +2,9 @@
 
 #include "pch-il2cpp.h"
 #include "main.h"
-#include <Windows.h>
+#include <windows.h>
 #include <iostream>
-#include <TlHelp32.h>
+#include <tlhelp32.h>
 
 #include "il2cpp-appdata.h"
 #include "il2cpp-init.h"
@@ -21,51 +21,17 @@ static HANDLE hSecurityThread = nullptr;
 
 static bool IsDebuggerDetected()
 {
- BOOL remote = FALSE;
- if (IsDebuggerPresent()) return true;
- if (CheckRemoteDebuggerPresent(GetCurrentProcess(), &remote) && remote) return true;
- return false;
+    return false;
 }
 
 static bool HasAnalysisModulesLoaded()
 {
- static const wchar_t* kBadMods[] = {
-  L"x64dbg.dll", L"x64dbghelp.dll", L"ollydbg.dll", L"scylla_hide.dll"
- };
- HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, GetCurrentProcessId());
- if (snap == INVALID_HANDLE_VALUE) return false;
- MODULEENTRY32W me{};
- me.dwSize = sizeof(me);
- bool hit = false;
- if (Module32FirstW(snap, &me)) {
-  do {
-   for (const wchar_t* bad : kBadMods) {
-    if (_wcsicmp(me.szModule, bad) == 0) {
-     hit = true;
-     break;
-    }
-   }
-   if (hit) break;
-  } while (Module32NextW(snap, &me));
- }
- CloseHandle(snap);
- return hit;
+    return false;
 }
 
 DWORD WINAPI SecurityWatcherThread(LPVOID)
 {
-#if defined(_DEBUG)
- return 0;
-#else
- while (hUnloadEvent) {
-  if (IsDebuggerDetected() || HasAnalysisModulesLoaded()) {
-   SetEvent(hUnloadEvent);
-   return 0;
-  }
-  Sleep(2000);
- }
- return 0;
-#endif
+    return 0;
 }
 
 void Run(LPVOID lpParam)

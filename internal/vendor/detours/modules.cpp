@@ -21,7 +21,7 @@
 
 #define _ARM_WINAPI_PARTITION_DESKTOP_SDK_AVAILABLE 1
 #include <windows.h>
-#if (_MSC_VER < 1310)
+#if defined(_MSC_VER) && (_MSC_VER < 1310)
 #else
 #pragma warning(push)
 #if _MSC_VER > 1400
@@ -366,7 +366,7 @@ PVOID WINAPI DetourGetEntryPoint(_In_opt_ HMODULE hModule)
             }
 
             SetLastError(NO_ERROR);
-            return GetProcAddress(hClr, "_CorExeMain");
+            return (PVOID)GetProcAddress(hClr, "_CorExeMain");
         }
 
         SetLastError(NO_ERROR);

@@ -1,7 +1,7 @@
 import net from 'net';
 import { EventEmitter } from 'events';
 import { readFileSync, existsSync, readdirSync, unlinkSync } from 'fs';
-import { join } from 'path';
+import { join, resolve } from 'path';
 import { tmpdir } from 'os';
 import { execFileSync } from 'child_process';
 import { ClientConnection } from './ClientConnection.js';
@@ -9,6 +9,7 @@ import { PacketFactory } from '../packets/PacketFactory.js';
 import { type Packet } from '../packets/Packet.js';
 import { State } from '../state/State.js';
 import { Logger } from '../util/Logger.js';
+import { ExaltFinder } from '../hooker/ExaltFinder.js';
 
 const TARGET_FILE = join(tmpdir(), 'rotmg_proxy_target.txt');
 const TARGET_FILE_PREFIX = 'rotmg_proxy_target_';
@@ -226,11 +227,34 @@ export class Proxy extends EventEmitter {
     }
   }
 
-  /** Read the original server IP from the legacy shared temp file (fallback). */
+  /** Collect all temporary directories across Windows, Linux, Wine prefixes, and Steam Proton sandboxes. */
+  private getTargetDirectories(): string[] {
+    const dirs = new Set<string>();
+    dirs.add(tmpdir());
+
+    // Wine / Proton / Steam sandboxes
+    try {
+      const candidates = ExaltFinder.findAll();
+      for (const p of candidates) {
+        dirs.add(resolve(p, '..', '..', 'Temp'));
+        dirs.add(resolve(p, '..', '..', 'temp'));
+        dirs.add(resolve(p, '..', '..', '..', 'windows', 'temp'));
+      }
+    } catch {}
+
+    return Array.from(dirs).filter((d) => {
+      try { return existsSync(d); } catch { return false; }
+    });
+  }
+
+  /** Read the original server IP from the legacy shared temp file across all temp directories (fallback). */
   readOriginalTarget(): string {
-    const ip = this.readTargetFile(TARGET_FILE);
-    if (!ip) Logger.warn('Proxy', `No DLL target found, using default: ${Proxy.DEFAULT_SERVER}`);
-    return ip;
+    for (const d of this.getTargetDirectories()) {
+      const ip = this.readTargetFile(join(d, 'rotmg_proxy_target.txt'));
+      if (ip) return ip;
+    }
+    Logger.warn('Proxy', `No DLL target found in any temp directories, using default: ${Proxy.DEFAULT_SERVER}`);
+    return Proxy.DEFAULT_SERVER;
   }
 
   private onLocalConnect(socket: net.Socket): void {
@@ -242,28 +266,50 @@ export class Proxy extends EventEmitter {
   }
 
   /** Resolve original server IP for an incoming socket using per-PID temp files.
-   *  Uses PowerShell Get-NetTCPConnection to map source port → game PID,
+   *  Uses PowerShell Get-NetTCPConnection (Windows) or scans PID files (Linux / Proton) to map source port → game PID,
    *  then reads rotmg_proxy_target_{PID}.txt written by the DLL.
-   *  Falls back to the legacy shared file if resolution fails. */
+   *  Falls back to the legacy shared file across all temp dirs if resolution fails. */
   private readOriginalTargetForSocket(socket: net.Socket): string {
     const remotePort = socket.remotePort;
-    if (remotePort && process.platform === 'win32') {
-      try {
-        const output = execFileSync('powershell.exe', [
-          '-NonInteractive', '-NoProfile', '-Command',
-          `(Get-NetTCPConnection -LocalPort ${remotePort} -RemotePort 2050 -State Established -ErrorAction SilentlyContinue | Select-Object -First 1).OwningProcess`,
-        ], { encoding: 'utf8', timeout: 2000, windowsHide: true } as any).trim();
-        const pid = parseInt(output, 10);
-        if (Number.isFinite(pid) && pid > 0) {
-          const pidFile = join(tmpdir(), `${TARGET_FILE_PREFIX}${pid}.txt`);
-          const ip = this.readTargetFile(pidFile);
-          if (ip) {
-            try { unlinkSync(pidFile); } catch {}
-            return ip;
+    const tempDirs = this.getTargetDirectories();
+
+    if (remotePort) {
+      if (process.platform === 'win32') {
+        try {
+          const output = execFileSync('powershell.exe', [
+            '-NonInteractive', '-NoProfile', '-Command',
+            `(Get-NetTCPConnection -LocalPort ${remotePort} -RemotePort 2050 -State Established -ErrorAction SilentlyContinue | Select-Object -First 1).OwningProcess`,
+          ], { encoding: 'utf8', timeout: 2000, windowsHide: true } as any).trim();
+          const pid = parseInt(output, 10);
+          if (Number.isFinite(pid) && pid > 0) {
+            for (const d of tempDirs) {
+              const pidFile = join(d, `${TARGET_FILE_PREFIX}${pid}.txt`);
+              const ip = this.readTargetFile(pidFile);
+              if (ip) {
+                try { unlinkSync(pidFile); } catch {}
+                return ip;
+              }
+            }
           }
+        } catch {
+          // PowerShell unavailable or timed out — fall through
         }
-      } catch {
-        // PowerShell unavailable or timed out — fall through to legacy
+      } else {
+        // On Linux / Steam Deck / Proton: check all PID-specific target files across temp dirs
+        for (const d of tempDirs) {
+          try {
+            for (const f of readdirSync(d)) {
+              if (f.startsWith(TARGET_FILE_PREFIX) && f.endsWith('.txt')) {
+                const targetFile = join(d, f);
+                const ip = this.readTargetFile(targetFile);
+                if (ip) {
+                  try { unlinkSync(targetFile); } catch {}
+                  return ip;
+                }
+              }
+            }
+          } catch {}
+        }
       }
     }
     return this.readOriginalTarget();
@@ -284,13 +330,14 @@ export class Proxy extends EventEmitter {
 
   /** Clean up any stale per-PID target files left over from previous sessions. */
   cleanStalePidFiles(): void {
-    try {
-      const tmp = tmpdir();
-      for (const f of readdirSync(tmp)) {
-        if (f.startsWith(TARGET_FILE_PREFIX) && f.endsWith('.txt')) {
-          try { unlinkSync(join(tmp, f)); } catch {}
+    for (const tmp of this.getTargetDirectories()) {
+      try {
+        for (const f of readdirSync(tmp)) {
+          if (f.startsWith(TARGET_FILE_PREFIX) && f.endsWith('.txt')) {
+            try { unlinkSync(join(tmp, f)); } catch {}
+          }
         }
-      }
-    } catch {}
+      } catch {}
+    }
   }
 }

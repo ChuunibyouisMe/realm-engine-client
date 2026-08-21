@@ -32,52 +32,52 @@ uint32_t HP          = 0x20C;
 uint32_t MaxHP       = 0x208;
 uint32_t Defense     = 0x210;
 uint32_t PlayerIGN   = 0x178;
-// COHCKAPOLCA dump 0x248 on LKHPPBEGNOM (not 0x218 — that is HMMHAKPBEDK). +0x50 ACTK => 0x298.
+// COHCKAPOLCA dump 0x250 on LKHPPBEGNOM (not 0x218 — that is HMMHAKPBEDK). +0x50 ACTK => 0x2A0.
 // AV on PMMFLLAIPGN is handled gracefully: AutoAim SEH catches it and returns false (untargetable).
 // PMMFLLAIPGN that AV are treated as targetable (correct fallback — assume no immunity).
-uint32_t MoConditions = 0x298;
+uint32_t MoConditions = 0x2A0;
 // ECGPFJKCCAN — Vector2 velocity. 0 = unresolved; AutoAim falls back to history.
 uint32_t MoVelocity   = 0;
 // KKENJFFDMPO — LKHPPBEGNOM ObjectProperties alias. Runtime metadata resolves this at 0x1C8.
 uint32_t MoObjectProps = 0x1C8;
 // GGBCADDBAPN — player collision ObjectProperties used by the C# working implementation.
-// Generated/inherited player layout resolves this at 0x2F0; unlike the stat fields above,
+// Generated/inherited player layout resolves this at 0x2F8; unlike the stat fields above,
 // runtime evidence shows this ObjectProperties pointer is not ACTK-shifted.
-uint32_t PlayerCollisionProps = 0x2F0;
+uint32_t PlayerCollisionProps = 0x2F8;
 
-uint32_t Tex1              = 0x4C4;
-uint32_t Tex2              = 0x538;
-uint32_t CurMP             = 0x54C;
-uint32_t MaxMP             = 0x548;
-// DAGEMHFLJLK — groundDamageImmune bool (dump 0x458 / runtime 0x4A8). NOT ability cooldown.
-uint32_t GroundDmgImmune   = 0x4A8;
-// BINDBHJLPMG — invincible bool (dump 0x459 / runtime 0x4A9). Short-duration hit invulnerability.
-uint32_t LocalInvincible   = 0x4A9;
-// PPBLNMIMIFP — abilityReady bool (dump 0x515 / runtime 0x565). True when ability can fire.
-uint32_t AbilityReady      = 0x565;
-// CGCMALPMMJL — bool moving (dump 0x448 / runtime 0x498).
-uint32_t Player_Moving     = 0x498;
-// BHJFNEAHAOE — float moveDirX (dump 0x478 / runtime 0x4C8).
-uint32_t Player_MoveDirX   = 0x4C8;
-// GDNEBFDDDKM — float moveDirY (dump 0x47C / runtime 0x4CC).
-uint32_t Player_MoveDirY   = 0x4CC;
-// BHJFNEAHAOE — float SPD stat (dump 0x478 / runtime 0x478, no ACTK shift).
+uint32_t Tex1              = 0x4CC;
+uint32_t Tex2              = 0x54C;
+uint32_t CurMP             = 0x5B4;
+uint32_t MaxMP             = 0x5B0;
+// DAGEMHFLJLK — groundDamageImmune bool (dump 0x460 / runtime 0x4B0). NOT ability cooldown.
+uint32_t GroundDmgImmune   = 0x4B0;
+// BINDBHJLPMG — invincible bool (dump 0x461 / runtime 0x4B1). Short-duration hit invulnerability.
+uint32_t LocalInvincible   = 0x4B1;
+// PPBLNMIMIFP — abilityReady bool (dump 0x52D / runtime 0x57D). True when ability can fire.
+uint32_t AbilityReady      = 0x57D;
+// CGCMALPMMJL — bool moving (dump 0x450 / runtime 0x4A0).
+uint32_t Player_Moving     = 0x4A0;
+// BHJFNEAHAOE — float moveDirX (dump 0x480 / runtime 0x4D0).
+uint32_t Player_MoveDirX   = 0x4D0;
+// GDNEBFDDDKM — float moveDirY (dump 0x484 / runtime 0x4D4).
+uint32_t Player_MoveDirY   = 0x4D4;
+// BHJFNEAHAOE — float SPD stat (dump 0x480 / runtime 0x480, no ACTK shift).
 // PlayerTAB and TestTAB read this without shift for the move-speed formula.
-uint32_t Player_Spd        = 0x478;
+uint32_t Player_Spd        = 0x480;
 
 // ApplicationManager → WorldManager field offset.
 // Set by GameState.cpp type-scan (immune to backing-field name obfuscation).
 uint32_t AppMgr_WorldMgr   = 0xC0;
 
 uint32_t WM_Local    = 0x48;
-uint32_t WM_AllDict  = 0xB0;
-uint32_t WM_MapDictA = 0xB8;
-uint32_t WM_MapDictB = 0xC0;
-uint32_t WM_KjmonList= 0xE8;
-uint32_t WM_TileArr  = 0x58;
-uint32_t WM_TileList = 0x60;
-uint32_t WM_TickId   = 0xD8;   // FIAJOKGHGGK — world tick counter UInt32
-uint32_t WM_TickId2  = 0xDC;   // HOMNPDGNOMO — secondary tick UInt32
+uint32_t WM_AllDict  = 0xC0;
+uint32_t WM_MapDictA = 0xC8;
+uint32_t WM_MapDictB = 0xD0;
+uint32_t WM_KjmonList= 0xF8;
+uint32_t WM_TileArr  = 0x68;
+uint32_t WM_TileList = 0x70;
+uint32_t WM_TickId   = 0xE8;   // FIAJOKGHGGK — world tick counter UInt32
+uint32_t WM_TickId2  = 0xEC;   // HOMNPDGNOMO — secondary tick UInt32
 
 uint32_t TileX       = 0x38;
 uint32_t TileY       = 0x3C;
@@ -96,40 +96,38 @@ uint32_t TP_Sinking  = 0xD8;
 uint32_t OP_IdStr         = 0x38;
 uint32_t OP_NoCover       = 0x98;
 // InvincibleElement string pointer — non-null iff XML <Invincible/> is set.
-// dump 0x450 + 0x10 IL2CPP object header = 0x460.
-uint32_t OP_InvincibleElem= 0x460;
+// dump 0x468.
+uint32_t OP_InvincibleElem= 0x468;
 uint32_t OP_NoWallRpt     = 0x210;
-uint32_t OP_OccupySq      = 0x69A;
-uint32_t OP_FullOcc       = 0x6D1;
-uint32_t OP_EnemyOcc      = 0x6D2;
-// isEnemy verified at 0x6D1 against the live client (upstream offset update);
-// our il2cpp-types.h dump still shows 0x6C9 — dump is stale for this region.
-uint32_t OP_IsEnemy       = 0x6D1;
-uint32_t OP_IsStatic      = 0x6D3;
-uint32_t OP_BlockProj     = 0x6D4;
-// noHealthBar bool — true when the entity type has no visible HP bar. dump 0x6C6 + 0x10 = 0x6D6.
-uint32_t OP_NoHealthBar   = 0x6D6;
-uint32_t OP_ProtGnd       = 0x6DC;
-uint32_t OP_ProtSink      = 0x6DD;
-uint32_t OP_Flying        = 0x6E4;
-uint32_t OP_ConnectT      = 0x754;
+uint32_t OP_OccupySq      = 0x6B2;
+uint32_t OP_FullOcc       = 0x6E9;
+uint32_t OP_EnemyOcc      = 0x6EA;
+uint32_t OP_IsEnemy       = 0x6E1;
+uint32_t OP_IsStatic      = 0x6EB;
+uint32_t OP_BlockProj     = 0x6EC;
+// noHealthBar bool — true when the entity type has no visible HP bar. dump 0x6EE.
+uint32_t OP_NoHealthBar   = 0x6EE;
+uint32_t OP_ProtGnd       = 0x6F4;
+uint32_t OP_ProtSink      = 0x6F5;
+uint32_t OP_Flying        = 0x6FC;
+uint32_t OP_ConnectT      = 0x784;
 uint32_t OP_Projectiles   = 0x1C0;
 
-uint32_t PP_Lifetime        = 0x158;
-uint32_t PP_Speed           = 0x160;
-uint32_t PP_IsWavy          = 0x164;
-uint32_t PP_IsBoomerang     = 0x165;
-uint32_t PP_IsParametric    = 0x168;
-uint32_t PP_HasCustomHitbox = 0x16D;
-uint32_t PP_LaserDist       = 0x170;
-uint32_t PP_SpeedClamp      = 0x174;
-uint32_t PP_AccelDelay      = 0x178;
-uint32_t PP_Acceleration    = 0x17C;
-uint32_t PP_AccelerationInv = 0x180;
-uint32_t PP_IsAccel         = 0x184;
-uint32_t PP_UseAccel        = 0x185;   // 1 byte after IsAccel — adjacent bool pair
-uint32_t PP_VelocityChangeRate = 0x188;
-uint32_t PP_VelocityChangeRateInv = 0x18C;
+uint32_t PP_Lifetime        = 0x160;
+uint32_t PP_Speed           = 0x168;
+uint32_t PP_IsWavy          = 0x16C;
+uint32_t PP_IsBoomerang     = 0x16D;
+uint32_t PP_IsParametric    = 0x170;
+uint32_t PP_HasCustomHitbox = 0x175;
+uint32_t PP_LaserDist       = 0x178;
+uint32_t PP_SpeedClamp      = 0x17C;
+uint32_t PP_AccelDelay      = 0x180;
+uint32_t PP_Acceleration    = 0x184;
+uint32_t PP_AccelerationInv = 0x188;
+uint32_t PP_IsAccel         = 0x18C;
+uint32_t PP_UseAccel        = 0x198;
+uint32_t PP_VelocityChangeRate = 0x190;
+uint32_t PP_VelocityChangeRateInv = 0x194;
 uint32_t PP_Magnitude       = 0x19C;
 uint32_t PP_Frequency       = 0x1A0;
 uint32_t PP_Amplitude       = 0x1A4;
@@ -143,9 +141,9 @@ uint32_t PP_CircleTurnDelay       = 0xF0;
 uint32_t PP_TurnAcceleration      = 0xDC;
 uint32_t PP_TurnAccelDelay        = 0xE0;
 uint32_t PP_TurnClamp             = 0xE4;
-uint32_t PP_TurnAccelInv          = 0x1AC;
-uint32_t PP_IsTurning             = 0x1B0;
-uint32_t PP_IsTurningDelayed      = 0x1B2;
+uint32_t PP_TurnAccelInv          = 0x1B4;
+uint32_t PP_IsTurning             = 0x1B8;
+uint32_t PP_IsTurningDelayed      = 0x1BA;
 
 uint32_t Hbeak_ProjRadius         = 0x1D4;  // HHFDCMIIIHF — collision radius T on projectile instance
 uint32_t Hbeak_ProjPropsPtr       = 0x118;  // FOMOIBCKIFP — per-shot ProjectileProperties override
@@ -153,7 +151,7 @@ uint32_t Hbeak_Angle              = 0x148;  // FFFFKPDHEFP — spawn angle Singl
 uint32_t Hbeak_InstanceDamage     = 0x174;  // DBNNDLKNECM — per-instance damage Int32
 uint32_t Hbeak_SpawnAgeMs         = 0x16C;  // GLEGBLDBOJF — spawn-age ms (path anchoring / expiry)
 uint32_t PP_CustomHitbox          = 0x148;  // "CustomHitbox" — ProjectileCustomHitbox* reference
-uint32_t PP_IsArmorPiercing       = 0x138;  // "IsArmorPiercing"
+uint32_t PP_IsArmorPiercing       = 0x174;  // "IsArmorPiercing"
 uint32_t CH_OffsetX               = 0x10;   // "offsetX" — custom hitbox X offset Single
 uint32_t CH_OffsetY               = 0x14;   // "offsetY" — custom hitbox Y offset Single
 uint32_t VH_SpriteShader          = 0x60;   // "spriteShader" — SpriteShader on ViewHandler
@@ -169,9 +167,9 @@ uint32_t Player_FacingAngle  = 0x22C;
 // (all parent ACTK shifts already baked into the dump layout).
 uint32_t Gjj_OriginX    = 0x370;  // ICODPOCLEEL.x (was "GuiCanvasSwitcher" decoy pre-2026-08 build)
 uint32_t Gjj_OriginY    = 0x374;  // ICODPOCLEEL.y (= OriginX+4)
-uint32_t Gjj_DestX      = 0x370;  // IAJJLFBDJGE.x
-uint32_t Gjj_DestY      = 0x374;  // IAJJLFBDJGE.y (= DestX+4)
-uint32_t Gjj_DurationMs = 0x388;  // EAICINLCCJK
+uint32_t Gjj_DestX      = 0x378;  // IAJJLFBDJGE.x
+uint32_t Gjj_DestY      = 0x37C;  // IAJJLFBDJGE.y (= DestX+4)
+uint32_t Gjj_DurationMs = 0x390;  // EAICINLCCJK
 
 // ── FHOHCELBPDO visual throwable ─────────────────────────────────────────
 // Origin is PosX/PosY (inherited from BMO base). No ACTK shift for LKFFPGONEOB.
@@ -478,7 +476,7 @@ static bool      s_allDone             = false;
 static bool      s_giveUpFired         = false;
 static char      s_unresolvedClassNames[512] = {};
 static ULONGLONG s_firstCallTick       = 0;
-static constexpr ULONGLONG kGiveUpMs   = 5000ULL;
+static constexpr ULONGLONG kGiveUpMs   = 60000ULL;
 
 bool HasGivenUp() { return s_giveUpFired; }
 bool AllResolved() { return s_allDone; }

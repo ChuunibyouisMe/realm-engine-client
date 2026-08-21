@@ -36,4 +36,59 @@ int ReadMessage(HANDLE hPipe, char* buf, int bufSize)
     return (int)msgLen;
 }
 
+bool WriteMessage(const IpcTransport& transport, const char* json, int len)
+{
+    if (transport.kind == TransportKind::NamedPipe) {
+        return WriteMessage(transport.hPipe, json, len);
+    }
+    if (transport.kind == TransportKind::TcpSocket) {
+        if (transport.sock == INVALID_SOCKET) return false;
+        uint32_t netLen = static_cast<uint32_t>(len);
+        int sentHdr = send(transport.sock, reinterpret_cast<const char*>(&netLen), 4, 0);
+        if (sentHdr != 4) return false;
+        int remaining = len;
+        const char* ptr = json;
+        while (remaining > 0) {
+            int n = send(transport.sock, ptr, remaining, 0);
+            if (n <= 0) return false;
+            ptr += n;
+            remaining -= n;
+        }
+        return true;
+    }
+    return false;
+}
+
+int ReadMessage(const IpcTransport& transport, char* buf, int bufSize)
+{
+    if (transport.kind == TransportKind::NamedPipe) {
+        return ReadMessage(transport.hPipe, buf, bufSize);
+    }
+    if (transport.kind == TransportKind::TcpSocket) {
+        if (transport.sock == INVALID_SOCKET) return -1;
+        u_long bytesAvail = 0;
+        if (ioctlsocket(transport.sock, FIONREAD, &bytesAvail) != 0) return -1;
+        if (bytesAvail < 4) return 0;
+
+        uint32_t msgLen = 0;
+        int peeked = recv(transport.sock, reinterpret_cast<char*>(&msgLen), 4, MSG_PEEK);
+        if (peeked != 4) return -1;
+        if (msgLen == 0 || msgLen >= static_cast<uint32_t>(bufSize)) return -1;
+        if (bytesAvail < 4 + msgLen) return 0; // wait for complete frame
+
+        int readHdr = recv(transport.sock, reinterpret_cast<char*>(&msgLen), 4, 0);
+        if (readHdr != 4) return -1;
+
+        uint32_t totalRead = 0;
+        while (totalRead < msgLen) {
+            int n = recv(transport.sock, buf + totalRead, static_cast<int>(msgLen - totalRead), 0);
+            if (n <= 0) return -1;
+            totalRead += static_cast<uint32_t>(n);
+        }
+        buf[msgLen] = '\0';
+        return static_cast<int>(msgLen);
+    }
+    return -1;
+}
+
 } // namespace IpcFraming

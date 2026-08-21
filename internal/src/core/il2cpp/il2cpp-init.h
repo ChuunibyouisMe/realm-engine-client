@@ -2,7 +2,7 @@
       // IL2CPP application initializer
 
       #pragma once
-      #include <Windows.h>
+      #include <windows.h>
 
       // IL2CPP application initializer.
       // Pass the pre-resolved GameAssembly.dll handle when available (from Load()).

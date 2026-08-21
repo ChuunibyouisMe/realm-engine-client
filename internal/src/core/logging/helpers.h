@@ -18,7 +18,7 @@ void LogError(const char* msg, bool showBox = false);
 // Helper function to open a new console window and redirect stdout there
 void il2cppi_new_console();
 
-#if _MSC_VER >= 1920
+#if !defined(_MSC_VER) || (_MSC_VER >= 1920)
 // Helper function to convert Il2CppString to std::string
 std::string il2cppi_to_string(Il2CppString* str);
 

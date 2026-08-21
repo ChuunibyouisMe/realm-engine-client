@@ -1,8 +1,8 @@
 #include "pch-il2cpp.h"
 #include "SkinDatabase.h"
 
-#include <Windows.h>
-#include <ShlObj.h>
+#include <windows.h>
+#include <shlobj.h>
 #include <fstream>
 #include <sstream>
 #include <algorithm>
@@ -44,7 +44,7 @@ bool Load()
     if (s_loaded) return true;
 
     std::wstring path = GetXmlPath();
-    std::ifstream f(path);
+    std::ifstream f(path.c_str());
     if (!f.is_open()) return false;
 
     std::string content((std::istreambuf_iterator<char>(f)),

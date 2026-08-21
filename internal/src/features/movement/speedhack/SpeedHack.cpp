@@ -67,7 +67,8 @@ static double GetTime() { return g_virtualTime; }
 static float GetTimeF() { return static_cast<float>(g_virtualTime); }
 }
 
-static bool AddrOk(const void* p)
+template<typename T>
+static bool AddrOk(T p)
 {
     const uintptr_t a = reinterpret_cast<uintptr_t>(p);
     return a >= 0x10000u && a <= 0x7FFFFFFFFFFFull;

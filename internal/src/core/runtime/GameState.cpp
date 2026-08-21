@@ -3,7 +3,7 @@
 #include "RuntimeOffsets.h"
 #include "Il2CppResolver.h"
 
-#include <Windows.h>
+#include <windows.h>
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GameState — see GameState.h for design notes.
@@ -25,28 +25,30 @@ static bool         s_wmOffsetResolved = false;    // true once AppMgr_WorldMgr 
 static inline bool AddrOk(const void* p)
 {
     uintptr_t a = reinterpret_cast<uintptr_t>(p);
-    return a >= 0x10000u && a <= 0x7FFFFFFFFFFFull;
-}
+    if (a < 0x10000u || a > 0x7FFFFFFFFFFFull) return false;
 
-// SEH must live in a function without C++ unwinding (C2712).
-static void* ReadPtr(const void* base, size_t offset) noexcept
-{
-    __try {
-        return *reinterpret_cast<void* const*>(
-            reinterpret_cast<const uint8_t*>(base) + offset);
-    }
-    __except (EXCEPTION_EXECUTE_HANDLER) { return nullptr; }
+    MEMORY_BASIC_INFORMATION mbi{};
+    if (VirtualQuery(p, &mbi, sizeof(mbi)) == 0) return false;
+    if (mbi.State != MEM_COMMIT) return false;
+    if (mbi.Protect & (PAGE_NOACCESS | PAGE_GUARD)) return false;
+    return (mbi.Protect & (PAGE_READONLY | PAGE_READWRITE | PAGE_WRITECOPY | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE)) != 0;
 }
 
 // Cheap vtable sanity: first qword of the object should be a valid code address.
 static bool PtrOk(const void* p)
 {
     if (!AddrOk(p)) return false;
-    __try {
-        void* klass = *reinterpret_cast<void* const*>(p);
-        return AddrOk(klass);
-    }
-    __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
+    const void* klass = *reinterpret_cast<void* const*>(p);
+    return AddrOk(klass);
+}
+
+static void* ReadPtr(const void* base, size_t offset) noexcept
+{
+    if (!AddrOk(base)) return nullptr;
+    const uint8_t* ptr = reinterpret_cast<const uint8_t*>(base) + offset;
+    if (!AddrOk(ptr)) return nullptr;
+    void* val = *reinterpret_cast<void* const*>(ptr);
+    return PtrOk(val) ? val : nullptr;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -4,7 +4,7 @@
 #include "GameState.h"
 #include "RuntimeOffsets.h"
 
-#include <Windows.h>
+#include <windows.h>
 #include <atomic>
 #include <cmath>
 #include <cstdint>

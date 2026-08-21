@@ -233,37 +233,37 @@ constexpr int kThreatEntryMax = 11 + 11 + 14 + 11 + 1 + 5;
 constexpr int kGroundSegMax   = (11 + 1 + 14) + kIpcMaxGroundEvents * (1 + 11 + 1 + 14) + 2;
 constexpr int kThreatPayloadMax = kIpcMaxThreats * kThreatEntryMax + kGroundSegMax + 1;
 
-static bool WriteThreats(HANDLE hPipe, char* msgBuf, int msgBufSize)
+static bool WriteThreats(const IpcTransport& transport, char* msgBuf, int msgBufSize)
 {
     char payload[kThreatPayloadMax] = {};
-    if (BuildThreatPayload(payload, sizeof(payload)) < 0) return true;   // nothing new
+    if (BuildThreatPayload(payload, sizeof(payload)) < 0) return true;
     const uint64_t outSeq = s_auth.nextServerSeq++;
     char outMac[65] = {};
     if (!IpcSession::ComputeSessionMacHex(s_auth.sessionKey, outSeq, "threats", payload, outMac)) return false;
     const int len = IpcMessages::BuildThreats(msgBuf, msgBufSize, payload, outSeq, outMac);
-    return IpcFraming::WriteMessage(hPipe, msgBuf, len);
+    return IpcFraming::WriteMessage(transport, msgBuf, len);
 }
 
-static bool WriteSignedHotkeyEvent(HANDLE hPipe, char* msgBuf, int msgBufSize, const char* pluginId, const char* action, bool value)
+static bool WriteSignedHotkeyEvent(const IpcTransport& transport, char* msgBuf, int msgBufSize, const char* pluginId, const char* action, bool value)
 {
-    if (!hPipe || !msgBuf || !pluginId || !action) return false;
+    if (!transport.IsValid() || !msgBuf || !pluginId || !action) return false;
     char payload[128] = {};
     snprintf(payload, sizeof(payload), "%s|%s|%s", pluginId, action, value ? "true" : "false");
     const uint64_t outSeq = s_auth.nextServerSeq++;
     char outMac[65] = {};
     if (!IpcSession::ComputeSessionMacHex(s_auth.sessionKey, outSeq, "hotkeyEvent", payload, outMac)) return false;
     const int len = IpcMessages::BuildHotkeyEvent(msgBuf, msgBufSize, pluginId, action, value, outSeq, outMac);
-    return IpcFraming::WriteMessage(hPipe, msgBuf, len);
+    return IpcFraming::WriteMessage(transport, msgBuf, len);
 }
 
 // Auth and heartbeat dispatcher
 
-static void WriteAuthResult(HANDLE hPipe, char* msgBuf, int msgBufSize, bool ok, const char* response = "")
+static void WriteAuthResult(const IpcTransport& transport, char* msgBuf, int msgBufSize, bool ok, const char* response = "")
 {
-    IpcFraming::WriteMessage(hPipe, msgBuf, IpcMessages::BuildAuthResult(msgBuf, msgBufSize, ok, response));
+    IpcFraming::WriteMessage(transport, msgBuf, IpcMessages::BuildAuthResult(msgBuf, msgBufSize, ok, response));
 }
 
-static bool DispatchAuthMessage(char* json, HANDLE hPipe, char* msgBuf, int msgBufSize)
+static bool DispatchAuthMessage(char* json, const IpcTransport& transport, char* msgBuf, int msgBufSize)
 {
     char typeBuf[64] = {};
     if (!IpcJson::GetString(json, "type", typeBuf, sizeof(typeBuf))) return false;
@@ -273,21 +273,21 @@ static bool DispatchAuthMessage(char* json, HANDLE hPipe, char* msgBuf, int msgB
             !IpcJson::GetString(json, "response", response, sizeof(response)) ||
             !IpcJson::GetString(json, "challenge", clientChallenge, sizeof(clientChallenge)) ||
             !IpcJson::GetString(json, "protocol", protocol, sizeof(protocol)) ||
-            !IpcJson::GetString(json, "clientPid", clientPid, sizeof(clientPid))) { DbgLog("Auth message missing required fields."); WriteAuthResult(hPipe, msgBuf, msgBufSize, false); return true; }
+            !IpcJson::GetString(json, "clientPid", clientPid, sizeof(clientPid))) { DbgLog("Auth message missing required fields."); WriteAuthResult(transport, msgBuf, msgBufSize, false); return true; }
 
         if (!IpcSession::IsAsciiIdSafe(userId) ||
             strcmp(protocol, "bridge-v3") != 0 ||
             strlen(response) != 64 || !Handshake::IsHexString(response, 64) ||
             strlen(clientChallenge) != 64 || !Handshake::IsHexString(clientChallenge, 64) ||
-            strlen(s_auth.pendingChallenge) != 64 || !Handshake::IsHexString(s_auth.pendingChallenge, 64)) { DbgLog("Auth payload failed format validation."); WriteAuthResult(hPipe, msgBuf, msgBufSize, false); return true; }
+            strlen(s_auth.pendingChallenge) != 64 || !Handshake::IsHexString(s_auth.pendingChallenge, 64)) { DbgLog("Auth payload failed format validation."); WriteAuthResult(transport, msgBuf, msgBufSize, false); return true; }
         strncpy_s(s_auth.userId, sizeof(s_auth.userId), userId, _TRUNCATE);
 
-        if (!IpcSession::DeriveSessionKey(s_auth.pendingChallenge, clientChallenge, s_auth.userId, clientPid, s_auth.sessionKey, PipeName())) { DbgLog("Session key derivation failed."); WriteAuthResult(hPipe, msgBuf, msgBufSize, false); return true; }
+        if (!IpcSession::DeriveSessionKey(s_auth.pendingChallenge, clientChallenge, s_auth.userId, clientPid, s_auth.sessionKey, PipeName())) { DbgLog("Session key derivation failed."); WriteAuthResult(transport, msgBuf, msgBufSize, false); return true; }
         s_auth.authenticated = true; s_auth.sessionReady = true; s_auth.heartbeatMisses = 0; s_auth.lastHeartbeatRecv = GetTickCount64(); s_auth.lastClientSeq = 0; s_auth.nextServerSeq = 1;
         DbgLog("Auth OK: userId=%s", userId);
         char dllResponse[65] = {};
-        if (!Handshake::ComputeResponse(clientChallenge, strlen(clientChallenge), dllResponse)) { DbgLog("Auth response generation failed."); WriteAuthResult(hPipe, msgBuf, msgBufSize, false); return true; }
-        WriteAuthResult(hPipe, msgBuf, msgBufSize, true, dllResponse);
+        if (!Handshake::ComputeResponse(clientChallenge, strlen(clientChallenge), dllResponse)) { DbgLog("Auth response generation failed."); WriteAuthResult(transport, msgBuf, msgBufSize, false); return true; }
+        WriteAuthResult(transport, msgBuf, msgBufSize, true, dllResponse);
         return true;
     }
 
@@ -313,7 +313,7 @@ static bool DispatchAuthMessage(char* json, HANDLE hPipe, char* msgBuf, int msgB
         if (!Handshake::ComputeResponse(nonce, strlen(nonce), resp)) return true;
         const uint64_t outSeq = s_auth.nextServerSeq++;
         if (!IpcSession::ComputeSessionMacHex(s_auth.sessionKey, outSeq, "heartbeatResp", resp, outMac)) return true;
-        IpcFraming::WriteMessage(hPipe, msgBuf, IpcMessages::BuildHeartbeatResp(msgBuf, msgBufSize, resp, outSeq, outMac));
+        IpcFraming::WriteMessage(transport, msgBuf, IpcMessages::BuildHeartbeatResp(msgBuf, msgBufSize, resp, outSeq, outMac));
         return true;
     }
     return false;
@@ -360,10 +360,10 @@ static bool DispatchTileCommand(const char* type, char* json, const char* seqStr
         return true;
     }
     if (strcmp(type, "tileUpdate") == 0) {
-        char tilesBuf[65000] = {};
-        if (!IpcJson::GetString(json, "tiles", tilesBuf, sizeof(tilesBuf))) return true;
-        if (!IpcSession::VerifyClientSeqAndMac(&s_auth, seqStr, macHex, "tileUpdate", tilesBuf)) return true;
-        IpcTileState::ApplyTileUpdate(tilesBuf);
+        auto tilesBuf = std::make_unique<char[]>(65000);
+        if (!IpcJson::GetString(json, "tiles", tilesBuf.get(), 65000)) return true;
+        if (!IpcSession::VerifyClientSeqAndMac(&s_auth, seqStr, macHex, "tileUpdate", tilesBuf.get())) return true;
+        IpcTileState::ApplyTileUpdate(tilesBuf.get());
         return true;
     }
     return false;
@@ -394,27 +394,56 @@ DWORD WINAPI IpcBridgeThread(LPVOID)
 {
     DBG_FILE_LOG("[IpcBridgeThread] Entered (DLL-as-client mode).");
     DbgLog("Thread started.");
-    DBG_FILE_LOG("[IpcBridgeThread] Handshake key OK. Connecting to pipe: " << PipeName());
+
+    WSADATA wsaData{};
+    WSAStartup(MAKEWORD(2, 2), &wsaData);
+
     while (!s_shutdown) {
-        if (!WaitNamedPipeA(PipeName(), 2000)) {
+        IpcTransport transport{};
+
+        // 1. Attempt connection via Windows Named Pipe
+        if (WaitNamedPipeA(PipeName(), 200)) {
+            HANDLE hPipe = CreateFileA(PipeName(), GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+            if (hPipe != INVALID_HANDLE_VALUE) {
+                DWORD pipeMode = PIPE_READMODE_BYTE;
+                SetNamedPipeHandleState(hPipe, &pipeMode, NULL, NULL);
+                transport.kind = TransportKind::NamedPipe;
+                transport.hPipe = hPipe;
+                DBG_FILE_LOG("[IpcBridgeThread] Connected via Named Pipe: " << PipeName());
+                DbgLog("Connected via Named Pipe.");
+            }
+        }
+
+        // 2. Fallback to TCP (127.0.0.1:4242) if Named Pipe is unavailable (Linux / Wine / Proton)
+        if (!transport.IsValid()) {
+            SOCKET sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+            if (sock != INVALID_SOCKET) {
+                int flag = 1;
+                setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, reinterpret_cast<const char*>(&flag), sizeof(flag));
+
+                sockaddr_in serverAddr{};
+                serverAddr.sin_family = AF_INET;
+                serverAddr.sin_port = htons(4242);
+                serverAddr.sin_addr.s_addr = inet_addr("127.0.0.1");
+
+                if (connect(sock, reinterpret_cast<sockaddr*>(&serverAddr), sizeof(serverAddr)) == 0) {
+                    transport.kind = TransportKind::TcpSocket;
+                    transport.sock = sock;
+                    DBG_FILE_LOG("[IpcBridgeThread] Connected via TCP (127.0.0.1:4242)");
+                    DbgLog("Connected via TCP (127.0.0.1:4242)");
+                } else {
+                    closesocket(sock);
+                }
+            }
+        }
+
+        if (!transport.IsValid()) {
             if (s_shutdown) break;
-            Sleep(500);
+            Sleep(1000);
             continue;
         }
 
-        HANDLE hPipe = CreateFileA(PipeName(), GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-        if (hPipe == INVALID_HANDLE_VALUE) {
-            const DWORD err = GetLastError();
-            DBG_FILE_LOG("[IpcBridgeThread] CreateFile failed: " << err);
-            if (err == ERROR_PIPE_BUSY) WaitNamedPipeA(PipeName(), 2000);
-            else Sleep(2000);
-            continue;
-        }
-
-        DWORD pipeMode = PIPE_READMODE_BYTE;
-        SetNamedPipeHandleState(hPipe, &pipeMode, NULL, NULL);
-
-        DBG_FILE_LOG("[IpcBridgeThread] Connected to Node.js pipe server. Sending hello...");
+        DBG_FILE_LOG("[IpcBridgeThread] Transport connected. Sending hello...");
         DbgLog("Connected. Sending hello...");
         Handshake::ResetAuthState(&s_auth);
 
@@ -422,16 +451,16 @@ DWORD WINAPI IpcBridgeThread(LPVOID)
         char helloChallenge[65] = {};
         if (!Handshake::GenerateChallenge(helloChallenge)) {
             DbgLog("Failed to generate hello challenge.");
-            CloseHandle(hPipe);
+            transport.Close();
             Sleep(1000);
             continue;
         }
 
         strncpy_s(s_auth.pendingChallenge, sizeof(s_auth.pendingChallenge), helloChallenge, _TRUNCATE);
         int len = IpcMessages::BuildHello(msgBuf, sizeof(msgBuf), helloChallenge);
-        if (!IpcFraming::WriteMessage(hPipe, msgBuf, len)) {
+        if (!IpcFraming::WriteMessage(transport, msgBuf, len)) {
             DbgLog("Failed to send hello.");
-            CloseHandle(hPipe);
+            transport.Close();
             Sleep(1000);
             continue;
         }
@@ -441,11 +470,11 @@ DWORD WINAPI IpcBridgeThread(LPVOID)
         ULONGLONG authDeadline = GetTickCount64() + 5000;
 
         while (GetTickCount64() < authDeadline && !s_shutdown) {
-            int readLen = IpcFraming::ReadMessage(hPipe, readBuf, sizeof(readBuf) - 1);
+            int readLen = IpcFraming::ReadMessage(transport, readBuf, sizeof(readBuf) - 1);
             if (readLen < 0) break;
             if (readLen > 0) {
                 readBuf[readLen] = '\0';
-                if (DispatchAuthMessage(readBuf, hPipe, msgBuf, sizeof(msgBuf))) {
+                if (DispatchAuthMessage(readBuf, transport, msgBuf, sizeof(msgBuf))) {
                     authOk = s_auth.authenticated;
                     break;
                 }
@@ -456,7 +485,7 @@ DWORD WINAPI IpcBridgeThread(LPVOID)
         if (!authOk) {
             DbgLog("Auth failed or timed out. Retrying.");
             Handshake::ResetAuthState(&s_auth);
-            CloseHandle(hPipe);
+            transport.Close();
             Sleep(2000);
             continue;
         }
@@ -469,7 +498,7 @@ DWORD WINAPI IpcBridgeThread(LPVOID)
         bool sentUnresolvedClasses = false;
 
         while (connected && !s_shutdown) {
-            int readLen = IpcFraming::ReadMessage(hPipe, readBuf, sizeof(readBuf) - 1);
+            int readLen = IpcFraming::ReadMessage(transport, readBuf, sizeof(readBuf) - 1);
             if (readLen < 0) {
                 DbgLog("Server disconnected.");
                 connected = false;
@@ -477,7 +506,7 @@ DWORD WINAPI IpcBridgeThread(LPVOID)
             }
             if (readLen > 0) {
                 readBuf[readLen] = '\0';
-                if (!DispatchAuthMessage(readBuf, hPipe, msgBuf, sizeof(msgBuf)) && Handshake::IsHealthy(&s_auth))
+                if (!DispatchAuthMessage(readBuf, transport, msgBuf, sizeof(msgBuf)) && Handshake::IsHealthy(&s_auth))
                     DispatchCommand(readBuf);
             }
 
@@ -504,7 +533,7 @@ DWORD WINAPI IpcBridgeThread(LPVOID)
                         break;
                     }
                     len = IpcMessages::BuildHeartbeat(msgBuf, sizeof(msgBuf), nonce, outSeq, outMac);
-                    if (!IpcFraming::WriteMessage(hPipe, msgBuf, len)) {
+                    if (!IpcFraming::WriteMessage(transport, msgBuf, len)) {
                         connected = false;
                         break;
                     }
@@ -522,14 +551,14 @@ DWORD WINAPI IpcBridgeThread(LPVOID)
                     break;
                 }
                 len = IpcMessages::BuildPlayer(msgBuf, sizeof(msgBuf), outSeq, outMac);
-                if (!IpcFraming::WriteMessage(hPipe, msgBuf, len)) {
+                if (!IpcFraming::WriteMessage(transport, msgBuf, len)) {
                     connected = false;
                     break;
                 }
             }
 
             if (Handshake::IsHealthy(&s_auth)) {
-                if (FeatureRuntime::PollSocketHotkeyEvent() && !WriteSignedHotkeyEvent(hPipe, msgBuf, sizeof(msgBuf), "socket", "toggle", true)) {
+                if (FeatureRuntime::PollSocketHotkeyEvent() && !WriteSignedHotkeyEvent(transport, msgBuf, sizeof(msgBuf), "socket", "toggle", true)) {
                     connected = false;
                     break;
                 }
@@ -537,7 +566,7 @@ DWORD WINAPI IpcBridgeThread(LPVOID)
                 std::vector<std::string> pluginToggleEvents;
                 FeatureRuntime::CollectPluginToggleHotkeyEvents(pluginToggleEvents);
                 for (const auto& pluginId : pluginToggleEvents) {
-                    if (!WriteSignedHotkeyEvent(hPipe, msgBuf, sizeof(msgBuf), pluginId.c_str(), "togglePlugin", true)) {
+                    if (!WriteSignedHotkeyEvent(transport, msgBuf, sizeof(msgBuf), pluginId.c_str(), "togglePlugin", true)) {
                         connected = false;
                         break;
                     }
@@ -545,7 +574,7 @@ DWORD WINAPI IpcBridgeThread(LPVOID)
                 if (!connected) break;
 
                 const int noclipEnabled = FeatureState::ConsumePendingPlayerNoclipEnabled();
-                if (noclipEnabled >= 0 && !WriteSignedHotkeyEvent(hPipe, msgBuf, sizeof(msgBuf), "player-noclip", "noclipEnabled", noclipEnabled != 0)) {
+                if (noclipEnabled >= 0 && !WriteSignedHotkeyEvent(transport, msgBuf, sizeof(msgBuf), "player-noclip", "noclipEnabled", noclipEnabled != 0)) {
                     connected = false;
                     break;
                 }
@@ -556,14 +585,14 @@ DWORD WINAPI IpcBridgeThread(LPVOID)
                     if (!s_pendingEvents.empty()) drained.swap(s_pendingEvents);
                 }
                 for (const auto& ev : drained) {
-                    if (!WriteSignedHotkeyEvent(hPipe, msgBuf, sizeof(msgBuf), ev.pluginId, ev.action, true)) {
+                    if (!WriteSignedHotkeyEvent(transport, msgBuf, sizeof(msgBuf), ev.pluginId, ev.action, true)) {
                         connected = false;
                         break;
                     }
                 }
                 if (!connected) break;
 
-                if (!WriteThreats(hPipe, msgBuf, sizeof(msgBuf))) {
+                if (!WriteThreats(transport, msgBuf, sizeof(msgBuf))) {
                     connected = false;
                     break;
                 }
@@ -577,7 +606,7 @@ DWORD WINAPI IpcBridgeThread(LPVOID)
                     char outMac[65] = {};
                     if (IpcSession::ComputeSessionMacHex(s_auth.sessionKey, outSeq, "unresolvedClasses", classes, outMac)) {
                         len = IpcMessages::BuildUnresolvedClasses(msgBuf, sizeof(msgBuf), classes, outSeq, outMac);
-                        IpcFraming::WriteMessage(hPipe, msgBuf, len);
+                        IpcFraming::WriteMessage(transport, msgBuf, len);
                     }
                 }
             }
@@ -585,11 +614,12 @@ DWORD WINAPI IpcBridgeThread(LPVOID)
         }
 
         Handshake::ResetAuthState(&s_auth);
-        CloseHandle(hPipe);
+        transport.Close();
         DbgLog("Disconnected. Will reconnect.");
     }
 
     DbgLog("Thread exiting.");
+    WSACleanup();
     Handshake::ClearSharedKeyCache();
     return 0;
 }

@@ -2,6 +2,8 @@
 #include <shellapi.h>
 #include <cstdio>
 #include <cstring>
+#include <unordered_map>
+#include <mutex>
 
 #include "Il2CppResolver.h"
 #include "helpers.h"
@@ -293,9 +295,24 @@ std::string FormatFieldValueInner(Il2CppObject* obj, FieldInfo* field)
 } // namespace
 
 namespace Resolver::Protection {
+	void EnsureThreadAttached()
+	{
+		static thread_local bool s_attached = false;
+		if (!s_attached) {
+			if (il2cpp_domain_get && il2cpp_thread_attach) {
+				Il2CppDomain* domain = il2cpp_domain_get();
+				if (domain) {
+					il2cpp_thread_attach(domain);
+					s_attached = true;
+				}
+			}
+		}
+	}
+
 	Il2CppObject* SafeRuntimeInvoke(const MethodInfo* method, Il2CppObject* obj, void** params)
 	{
 		if (!method || (!obj && !(method->flags & 0x0010))) return nullptr;
+		EnsureThreadAttached();
 		Il2CppObject* result = nullptr;
 		Il2CppException* exc = nullptr;
 		bool success = Protection::safe_call([&]() {
@@ -307,8 +324,16 @@ namespace Resolver::Protection {
 	bool IsAlive(Il2CppObject* obj)
 	{
 		if (!IsValidIl2CppObject(obj)) return false;
-		static Il2CppClass* objectClass = Resolver::FindClass("UnityEngine", "Object");
-		static const MethodInfo* op_Implicit = il2cpp_class_get_method_from_name(objectClass, "op_Implicit", 1);
+		EnsureThreadAttached();
+		static Il2CppClass* objectClass = nullptr;
+		static const MethodInfo* op_Implicit = nullptr;
+		if (!objectClass) {
+			objectClass = Resolver::FindClass("UnityEngine", "Object");
+			if (objectClass) {
+				op_Implicit = il2cpp_class_get_method_from_name(objectClass, "op_Implicit", 1);
+			}
+		}
+		if (!op_Implicit) return true;
 		void* params[] = { obj };
 		Il2CppObject* result = SafeRuntimeInvoke(op_Implicit, obj, params);
 		return result && *(bool*)il2cpp_object_unbox(result);
@@ -316,20 +341,46 @@ namespace Resolver::Protection {
 }
 
 namespace Resolver {
-	// il2cpp_domain_get_assemblies is not exported by this build.
-	// Use il2cpp_class_for_each to scan all loaded classes instead.
+	static std::unordered_map<std::string, Il2CppClass*> s_classMap;
+	static std::unordered_map<std::string, Il2CppClass*> s_fullClassMap;
+	static std::mutex s_classMapMutex;
+	static ULONGLONG s_lastScanTick = 0;
+
+	static void PopulateClassCache()
+	{
+		ULONGLONG now = GetTickCount64();
+		if (now - s_lastScanTick < 1000ULL && !s_classMap.empty()) return;
+		s_lastScanTick = now;
+
+		std::lock_guard<std::mutex> lk(s_classMapMutex);
+		il2cpp_class_for_each([](Il2CppClass* klass, void*) {
+			if (!klass) return;
+			const char* name = il2cpp_class_get_name(klass);
+			if (name && name[0]) {
+				s_classMap[name] = klass;
+				const char* ns = il2cpp_class_get_namespace(klass);
+				if (ns) {
+					std::string full = std::string(ns) + "." + name;
+					s_fullClassMap[full] = klass;
+				}
+			}
+		}, nullptr);
+	}
+
 	Il2CppClass* GetClass(const char* namespaze, const char* name)
 	{
-		struct Ctx { const char* ns; const char* name; Il2CppClass* result; };
-		Ctx ctx{ namespaze, name, nullptr };
-		il2cpp_class_for_each([](Il2CppClass* klass, void* ud) {
-			auto* c = static_cast<Ctx*>(ud);
-			if (c->result) return;
-			if (strcmp(il2cpp_class_get_namespace(klass), c->ns) == 0 &&
-				strcmp(il2cpp_class_get_name(klass), c->name) == 0)
-				c->result = klass;
-		}, &ctx);
-		return ctx.result;
+		if (!name || !name[0]) return nullptr;
+		PopulateClassCache();
+		std::lock_guard<std::mutex> lk(s_classMapMutex);
+		if (!namespaze || !namespaze[0]) {
+			auto it = s_classMap.find(name);
+			if (it != s_classMap.end()) return it->second;
+		} else {
+			std::string full = std::string(namespaze) + "." + name;
+			auto it = s_fullClassMap.find(full);
+			if (it != s_fullClassMap.end()) return it->second;
+		}
+		return nullptr;
 	}
 
 	Il2CppClass* FindClass(const char* namespaze, const char* name)
@@ -340,15 +391,11 @@ namespace Resolver {
 	Il2CppClass* FindClassLoose(const char* className)
 	{
 		if (!className || !className[0]) return nullptr;
-		struct Ctx { const char* name; Il2CppClass* result; };
-		Ctx ctx{ className, nullptr };
-		il2cpp_class_for_each([](Il2CppClass* klass, void* ud) {
-			auto* c = static_cast<Ctx*>(ud);
-			if (c->result) return;
-			if (strcmp(il2cpp_class_get_name(klass), c->name) == 0)
-				c->result = klass;
-		}, &ctx);
-		return ctx.result;
+		PopulateClassCache();
+		std::lock_guard<std::mutex> lk(s_classMapMutex);
+		auto it = s_classMap.find(className);
+		if (it != s_classMap.end()) return it->second;
+		return nullptr;
 	}
 
 	std::vector<Il2CppObject*> FindObjectsByType(Il2CppClass* targetClass)
@@ -356,13 +403,33 @@ namespace Resolver {
 		std::vector<Il2CppObject*> foundObjects;
 		if (!targetClass) return foundObjects;
 
-		static Il2CppClass* unityObjectClass = Resolver::FindClass("UnityEngine", "Object");
-		static const MethodInfo* findMethod = il2cpp_class_get_method_from_name(unityObjectClass, "FindObjectsOfType", 1);
+		Resolver::Protection::EnsureThreadAttached();
+
+		static Il2CppClass* unityObjectClass = nullptr;
+		static const MethodInfo* findMethod = nullptr;
+		static bool s_findResolved = false;
+
+		if (!s_findResolved) {
+			unityObjectClass = Resolver::FindClass("UnityEngine", "Object");
+			if (unityObjectClass) {
+				findMethod = il2cpp_class_get_method_from_name(unityObjectClass, "FindObjectsOfType", 1);
+				if (!findMethod) {
+					findMethod = il2cpp_class_get_method_from_name(unityObjectClass, "FindObjectsByType", 1);
+				}
+				if (findMethod) s_findResolved = true;
+			}
+		}
 
 		if (!findMethod) return foundObjects;
 
 		const Il2CppType* type = il2cpp_class_get_type(targetClass);
-		Il2CppReflectionType* reflectionType = (Il2CppReflectionType*)il2cpp_type_get_object(type);
+		if (!type) return foundObjects;
+
+		Il2CppReflectionType* reflectionType = nullptr;
+		bool ok = Resolver::Protection::safe_call([&]() {
+			reflectionType = (Il2CppReflectionType*)il2cpp_type_get_object(type);
+		});
+		if (!ok || !reflectionType) return foundObjects;
 
 		void* params[] = { reflectionType };
 		Il2CppArray* results = (Il2CppArray*)Resolver::Protection::SafeRuntimeInvoke(findMethod, nullptr, params);
@@ -475,7 +542,7 @@ namespace Resolver::Helpers{
 		return resultName;
 	}
 
-	void Helpers::CopyToClipboard(const char* text)
+	void CopyToClipboard(const char* text)
 	{
 		if (OpenClipboard(NULL)) {
 			EmptyClipboard();

@@ -10,7 +10,7 @@
 #include <cstdio>
 #include <cstdarg>
 #include <ctime>
-#include <Windows.h>
+#include <windows.h>
 #include <sstream>
 
 inline const char* DbgFileLogPath()

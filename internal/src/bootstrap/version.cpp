@@ -10,11 +10,13 @@
 #include <thread>
 #include <string>
 
+#include "InitHooks.h"
+
 HMODULE version_dll = nullptr;
 
 #define WRAPPER_GENFUNC(name) \
       FARPROC o##name; \
-      void _##name() { if (o##name) ((void(*)())o##name)(); }
+      extern "C" void _##name() { if (o##name) ((void(*)())o##name)(); }
 
 WRAPPER_GENFUNC(GetFileVersionInfoA)
 WRAPPER_GENFUNC(GetFileVersionInfoByHandle)
@@ -122,28 +124,6 @@ DWORD WINAPI Load(LPVOID lpParam) {
  DBG_FILE_LOG("[Load] GameAssembly.dll found after " << (pollIter*500) << "ms (addr=" << (void*)gameAsm << "). Waiting 2s for IL2CPP init...");
 
  std::this_thread::sleep_for(std::chrono::seconds(2));
-
- // Gate Run() on the bot-client sniffer seeing a HELLO packet. The sniffer
- // sets this named event the moment it observes HELLO, which means the
- // client has reached the in-game connection handshake. Until then we keep
- // the overlay/hooks dormant so nothing shows on the login/char-select.
- // Bounded wait: if the sniffer isn't running (or was skipped) we still
- // proceed so the DLL remains useful for standalone/manual runs.
- {
-  HANDLE hHello = CreateEventW(nullptr, TRUE /*manualReset*/, FALSE, L"Local\\LFGInternalHelloReady");
-  if (hHello) {
-   DBG_FILE_LOG("[Load] Waiting on Local\\LFGInternalHelloReady (sniffer HELLO signal)...");
-   DWORD waitResult = WaitForSingleObject(hHello, 30 * 1000); // 30 s max then proceed
-   if (waitResult == WAIT_OBJECT_0) {
-    DBG_FILE_LOG("[Load] HELLO event signaled — proceeding to Run().");
-   } else {
-    DBG_FILE_LOG("[Load] HELLO event wait returned " << waitResult << " (timeout/err) — proceeding without signal.");
-   }
-   CloseHandle(hHello);
-  } else {
-   DBG_FILE_LOG("[Load] CreateEventW(LFGInternalHelloReady) failed err=" << GetLastError() << " — proceeding without gate.");
-  }
- }
 
  // Store the pre-resolved handle so init_il2cpp() can use it directly
  // instead of re-looking up via GetModuleHandleW (which can fail with xorstr).

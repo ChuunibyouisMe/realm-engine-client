@@ -7,7 +7,7 @@
 #include "Il2CppResolver.h"
 #include "minhook/MinHook.h"
 
-#include <Windows.h>
+#include <windows.h>
 #include <atomic>
 #include <cmath>
 #include <cstdint>

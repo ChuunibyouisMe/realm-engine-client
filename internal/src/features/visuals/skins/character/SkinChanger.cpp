@@ -4,7 +4,7 @@
 #include "RuntimeOffsets.h"
 #include "Il2CppResolver.h"
 
-#include <Windows.h>
+#include <windows.h>
 #include <atomic>
 #include <cstdint>
 

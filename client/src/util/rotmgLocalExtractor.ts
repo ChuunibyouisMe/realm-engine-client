@@ -11,6 +11,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync, statSync } from 'fs
 import { join } from 'path';
 import { homedir } from 'os';
 import { Logger } from './Logger.js';
+import { ExaltFinder } from '../hooker/ExaltFinder.js';
 
 // Sharp is loaded lazily because it's a native module (~50 MB of
 // platform-specific binaries) and only used by the first-run RotMG
@@ -19,12 +20,12 @@ import { Logger } from './Logger.js';
 // rotmgAssetExtractor) to bundle sharp's native deps even though
 // they never call extractLocalGameAssets. Dynamic + esbuild-external
 // keeps the plugin bundle clean.
-type SharpFactory = typeof import('sharp');
+type SharpFactory = typeof import('sharp')['default'];
 let _sharp: SharpFactory | null = null;
 async function loadSharp(): Promise<SharpFactory> {
   if (_sharp) return _sharp;
-  const mod = await import('sharp') as unknown as { default: SharpFactory };
-  _sharp = mod.default;
+  const mod = await import('sharp');
+  _sharp = (mod.default ?? mod) as unknown as SharpFactory;
   return _sharp;
 }
 
@@ -35,6 +36,12 @@ const SPRITESHEET_PARSER_VERSION = 2;
 
 export function findLocalGameDataDir(): string | null {
   const home = homedir();
+
+  // Search all detected Exalt installations (Windows, Linux, Wine, Steam Deck, Proton)
+  for (const exaltDir of ExaltFinder.findAll()) {
+    const dataDir = join(exaltDir, 'RotMG Exalt_Data');
+    if (existsSync(join(dataDir, 'resources.assets'))) return dataDir;
+  }
 
   // Windows: %LOCALAPPDATA%\RealmOfTheMadGod\Production\RotMG Exalt_Data
   const localAppData = process.env.LOCALAPPDATA ?? join(home, 'AppData', 'Local');

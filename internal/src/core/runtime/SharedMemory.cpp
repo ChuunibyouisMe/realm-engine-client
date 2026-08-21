@@ -3,7 +3,7 @@
 #include "LocalPlayer.h"
 #include "FeatureState.h"
 
-#include <Windows.h>
+#include <windows.h>
 #include <cmath>
 #include <cstring>
 

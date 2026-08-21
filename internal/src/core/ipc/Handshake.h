@@ -19,7 +19,7 @@
 
 #include <cstdint>
 #include <cstddef>
-#include <Windows.h>
+#include <windows.h>
 
 namespace Handshake {
 

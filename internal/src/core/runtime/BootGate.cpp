@@ -96,9 +96,8 @@ void Audit() {
     const int n = total < 160 ? total : 160;
     for (int r = 0; r < n; ++r) {
         const RuntimeOffsets::OffsetState st = rows[r].state;
-        const bool bad = (st == RuntimeOffsets::OffsetState::FallbackGaveUp)
-                      || (st == RuntimeOffsets::OffsetState::FallbackFieldName)
-                      || (st == RuntimeOffsets::OffsetState::Suspect);
+        const bool bad = (st == RuntimeOffsets::OffsetState::Suspect)
+                      || (inWorld && st == RuntimeOffsets::OffsetState::FallbackGaveUp);
         if (!bad) continue;
         const int a = FindAnchor(rows[r].className);
         if (a >= 0) s_anchorStale[a] = true;

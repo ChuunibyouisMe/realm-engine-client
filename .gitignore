@@ -14,3 +14,4 @@ internal/data/objects.xml
 # ── Local tooling ──
 /tools/
 /.idea/
+internal/build/

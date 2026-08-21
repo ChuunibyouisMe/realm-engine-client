@@ -68,13 +68,13 @@ export class GameHooker {
       return false;
     }
 
-    if (process.env.REALM_ENGINE_SKIP_WINHTTP_INSTALL === '1') {
-      Logger.warn(
-        'GameHooker',
-        'Skipping winhttp.dll install (REALM_ENGINE_SKIP_WINHTTP_INSTALL=1). Remove game folder winhttp.dll manually if a prior run left it there.',
-      );
-      this.installed = false;
-      return false;
+    if (process.platform !== 'win32' || process.env.REALM_ENGINE_SKIP_WINHTTP_INSTALL === '1') {
+      const target = join(this.gamePath, DLL_NAME);
+      if (existsSync(target)) {
+        try { unlinkSync(target); } catch {}
+      }
+      this.installed = true;
+      return true;
     }
 
     // #region agent log

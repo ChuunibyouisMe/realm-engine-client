@@ -93,65 +93,55 @@ static const std::map<uint8_t, const char*> KeyMap = {
 	{0xA3, "R CTRL"},
 };
 
-static std::bitset<0xFF> KeyState;
-static std::bitset<0xFF> PressedLatch;
-static std::bitset<0xFF> ReleasedLatch;
-
-static void SetKeyState(uint8_t key, bool down)
-{
-	if (KeyState[key] == down) 
-		return;
-	KeyState[key] = down;
-	
-	if (down) 
-		PressedLatch[key]  = true;
-	else
-		ReleasedLatch[key] = true;
-}
+static std::bitset<0x100> KeyState;
+static std::bitset<0x100> PressedLatch;
+static std::bitset<0x100> ReleasedLatch;
+static bool s_lastAsyncDown[256] = {};
 
 void KeyBinds::WndProc(UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
 	switch (uMsg) {
 	case WM_LBUTTONDOWN: case WM_LBUTTONDBLCLK:
+		KeyState[0x01] = true; PressedLatch[0x01] = true; return;
 	case WM_RBUTTONDOWN: case WM_RBUTTONDBLCLK:
+		KeyState[0x02] = true; PressedLatch[0x02] = true; return;
 	case WM_MBUTTONDOWN: case WM_MBUTTONDBLCLK:
-	case WM_XBUTTONDOWN: case WM_XBUTTONDBLCLK:
-	{
-		uint8_t mouseButton = 0;
-
-		if (uMsg == WM_LBUTTONDOWN || uMsg == WM_LBUTTONDBLCLK) { mouseButton = 0x01; }
-		if (uMsg == WM_RBUTTONDOWN || uMsg == WM_RBUTTONDBLCLK) { mouseButton = 0x02; }
-		if (uMsg == WM_MBUTTONDOWN || uMsg == WM_MBUTTONDBLCLK) { mouseButton = 0x04; }
-		if (uMsg == WM_XBUTTONDOWN || uMsg == WM_XBUTTONDBLCLK) { mouseButton = (GET_XBUTTON_WPARAM(wParam) == XBUTTON1) ? 0x05 : 0x06; }
-		SetKeyState(mouseButton, true);
-		return;
+		KeyState[0x04] = true; PressedLatch[0x04] = true; return;
+	case WM_XBUTTONDOWN: case WM_XBUTTONDBLCLK: {
+		uint8_t mb = (GET_XBUTTON_WPARAM(wParam) == XBUTTON1) ? 0x05 : 0x06;
+		KeyState[mb] = true; PressedLatch[mb] = true; return;
 	}
 	case WM_LBUTTONUP:
+		KeyState[0x01] = false; ReleasedLatch[0x01] = true; return;
 	case WM_RBUTTONUP:
+		KeyState[0x02] = false; ReleasedLatch[0x02] = true; return;
 	case WM_MBUTTONUP:
-	case WM_XBUTTONUP:
-	{
-		uint8_t mouseButton = 0;
-
-		if (uMsg == WM_LBUTTONUP) { mouseButton = 0x01; }
-		if (uMsg == WM_RBUTTONUP) { mouseButton = 0x02; }
-		if (uMsg == WM_MBUTTONUP) { mouseButton = 0x04; }
-		if (uMsg == WM_XBUTTONUP) { mouseButton = (GET_XBUTTON_WPARAM(wParam) == XBUTTON1) ? 0x05 : 0x06; }
-		SetKeyState(mouseButton, false);
-		return;
+		KeyState[0x04] = false; ReleasedLatch[0x04] = true; return;
+	case WM_XBUTTONUP: {
+		uint8_t mb = (GET_XBUTTON_WPARAM(wParam) == XBUTTON1) ? 0x05 : 0x06;
+		KeyState[mb] = false; ReleasedLatch[mb] = true; return;
 	}
 	case WM_KEYDOWN:
 	case WM_SYSKEYDOWN:
 	{
-		if (wParam < 256)
-			SetKeyState(static_cast<uint8_t>(wParam), true);
+		if (wParam < 256) {
+			uint8_t key = static_cast<uint8_t>(wParam);
+			bool repeat = (lParam & (1 << 30)) != 0;
+			KeyState[key] = true;
+			if (!repeat) {
+				PressedLatch[key] = true;
+			}
+		}
 		return;
 	}
 	case WM_KEYUP:
 	case WM_SYSKEYUP:
 	{
-		if (wParam < 256)
-			SetKeyState(static_cast<uint8_t>(wParam), false);
+		if (wParam < 256) {
+			uint8_t key = static_cast<uint8_t>(wParam);
+			KeyState[key] = false;
+			ReleasedLatch[key] = true;
+		}
 		return;
 	}
 	case WM_KILLFOCUS:
@@ -183,19 +173,30 @@ std::vector<uint8_t> KeyBinds::GetValidKeys()
 
 bool KeyBinds::IsKeyDown(uint8_t key)
 {
-	return KeyState[key];
+	if (key == 0) return false;
+	if (KeyState[key]) return true;
+	SHORT s = GetAsyncKeyState(key);
+	return (s & 0x8000) != 0;
 }
 
 bool KeyBinds::IsKeyPressed(uint8_t key)
 {
-	if (!PressedLatch[key]) return false;
+	if (key == 0) return false;
+	bool pressed = PressedLatch[key];
 	PressedLatch[key] = false;
-	return true;
+
+	SHORT s = GetAsyncKeyState(key);
+	bool isDown = (s & 0x8000) != 0;
+	bool asyncEdge = isDown && !s_lastAsyncDown[key];
+	s_lastAsyncDown[key] = isDown;
+
+	return pressed || asyncEdge;
 }
 
 bool KeyBinds::IsKeyReleased(uint8_t key)
 {
-	if (!ReleasedLatch[key]) return false;
+	if (key == 0) return false;
+	bool released = ReleasedLatch[key];
 	ReleasedLatch[key] = false;
-	return true;
+	return released;
 }

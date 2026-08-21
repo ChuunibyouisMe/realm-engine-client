@@ -11,7 +11,7 @@
 // Output lands in the same file as DBG_FILE_LOG:
 //   %LOCALAPPDATA%\RotMG Exalt DLL Trace.log
 
-#include <Windows.h>
+#include <windows.h>
 #include <cstdint>
 #include <cstdio>
 #include "DbgFileLog.h"

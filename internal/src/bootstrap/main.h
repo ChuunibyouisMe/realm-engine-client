@@ -1,6 +1,6 @@
 // main.h
 #pragma once
-#include <Windows.h>
+#include <windows.h>
 
 extern HMODULE hModule;
 extern HANDLE hUnloadEvent;

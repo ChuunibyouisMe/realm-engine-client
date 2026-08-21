@@ -10,7 +10,7 @@
 #include "ProjectileTracking.h"
 #include "AoeTracking.h"
 
-#include <Windows.h>
+#include <windows.h>
 #include <atomic>
 #include <cmath>
 #include <cstdint>

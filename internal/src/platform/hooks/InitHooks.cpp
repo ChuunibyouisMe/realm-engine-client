@@ -1,7 +1,11 @@
 #include "pch-il2cpp.h"
-#include <Windows.h>
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <windows.h>
 #include <iostream>
 #include <mutex>
+#include <cstdio>
+#include <cstring>
 #include "detours/detours.h"
 #include "minhook/MinHook.h"
 #include "InitHooks.h"
@@ -17,6 +21,102 @@
 #include "IpcBridge.h"
 #include "DbgFileLog.h"
 #include "DangerPlanner.h"
+#include "core/logging/helpers.h"
+
+namespace {
+
+constexpr u_short kGamePort = 2050;
+
+using connect_t = int(WSAAPI*)(SOCKET, const sockaddr*, int);
+static connect_t s_realConnect = nullptr;
+static void*     s_connectTarget = nullptr;
+static bool      s_connectInstalled = false;
+
+static void WriteWholeFile(const char* path, const char* text) {
+    HANDLE h = CreateFileA(path, GENERIC_WRITE, FILE_SHARE_READ, nullptr,
+                           CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (h == INVALID_HANDLE_VALUE) return;
+    DWORD written = 0;
+    WriteFile(h, text, static_cast<DWORD>(std::strlen(text)), &written, nullptr);
+    CloseHandle(h);
+}
+
+static void RecordOriginalTarget(const char* ipDottedQuad) {
+    char tmpDir[MAX_PATH];
+    DWORD n = GetTempPathA(MAX_PATH, tmpDir);
+    if (n == 0 || n >= MAX_PATH) return;
+
+    char path[MAX_PATH];
+
+    snprintf(path, sizeof(path), "%srotmg_proxy_target_%lu.txt", tmpDir, GetCurrentProcessId());
+    WriteWholeFile(path, ipDottedQuad);
+
+    snprintf(path, sizeof(path), "%srotmg_proxy_target.txt", tmpDir);
+    WriteWholeFile(path, ipDottedQuad);
+}
+
+static int WSAAPI HookedConnect(SOCKET s, const sockaddr* name, int namelen) {
+    if (name && namelen >= static_cast<int>(sizeof(sockaddr_in)) &&
+        name->sa_family == AF_INET) {
+        const sockaddr_in* in4 = reinterpret_cast<const sockaddr_in*>(name);
+
+        if (in4->sin_port == htons(kGamePort)) {
+            char ip[INET_ADDRSTRLEN] = {0};
+            if (inet_ntop(AF_INET, &in4->sin_addr, ip, sizeof(ip)) != nullptr) {
+                DBG_FILE_LOG("[ConnectHook] Port 2050 connection detected to " << ip << ":2050 (passthrough test)");
+            }
+        }
+    }
+
+    return s_realConnect(s, name, namelen);
+}
+
+} // anonymous namespace
+
+bool InstallConnectHook() {
+    if (s_connectInstalled) return true;
+
+    MH_STATUS st = MH_Initialize();
+    if (st != MH_OK && st != MH_ERROR_ALREADY_INITIALIZED) {
+        return false;
+    }
+
+    HMODULE ws2 = LoadLibraryA("ws2_32.dll");
+    if (!ws2) {
+        return false;
+    }
+
+    s_connectTarget = reinterpret_cast<void*>(GetProcAddress(ws2, "connect"));
+    if (!s_connectTarget) {
+        return false;
+    }
+
+    if (MH_CreateHook(s_connectTarget, reinterpret_cast<void*>(&HookedConnect),
+                      reinterpret_cast<void**>(&s_realConnect)) != MH_OK) {
+        return false;
+    }
+    if (MH_EnableHook(s_connectTarget) != MH_OK) {
+        return false;
+    }
+
+    s_connectInstalled = true;
+    DBG_FILE_LOG("[ConnectHook] Successfully installed socket redirect hook");
+    return true;
+}
+
+void RemoveConnectHook() {
+    if (!s_connectInstalled) return;
+
+    if (s_connectTarget) {
+        MH_DisableHook(s_connectTarget);
+        MH_RemoveHook(s_connectTarget);
+        s_connectTarget = nullptr;
+    }
+
+    s_realConnect = nullptr;
+    s_connectInstalled = false;
+    DBG_FILE_LOG("[ConnectHook] Removed socket redirect hook");
+}
 
 bool HookFunction(PVOID* ppPointer, PVOID pDetour, const char* functionName) {
     if (const auto error = DetourAttach(ppPointer, pDetour); error != NO_ERROR) {
@@ -61,7 +161,7 @@ void DetourInitilization() {
 
     std::cout << "[INFO]: Attempting to hook oPresent at address: " << oPresent << std::endl;
 
-    if (!HookFunction(&(PVOID&)oPresent, dPresent, "D3D_PRESENT_FUNCTION")) {
+    if (!HookFunction(&(PVOID&)oPresent, (PVOID)dPresent, "D3D_PRESENT_FUNCTION")) {
         DetourTransactionAbort();
         return;
     }
@@ -91,6 +191,7 @@ void DetourUninitialization()
         DirectX::Shutdown();
 
         // 3) Remove IL2CPP MinHook targets before MinHook uninit.
+        RemoveConnectHook();
         NoclipHook::Uninstall();
         SpeedHack::Uninstall();
         DangerPlanner::Uninstall();
@@ -107,7 +208,7 @@ void DetourUninitialization()
         if (oPresent) {
             DetourTransactionBegin();
             DetourUpdateThread(GetCurrentThread());
-            const LONG detachErr = DetourDetach(&(PVOID&)oPresent, dPresent);
+            const LONG detachErr = DetourDetach(&(PVOID&)oPresent, (PVOID)dPresent);
             if (detachErr != NO_ERROR) {
                 DetourTransactionAbort();
             } else if (DetourTransactionCommit() != NO_ERROR) {

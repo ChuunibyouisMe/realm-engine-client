@@ -79,6 +79,18 @@ log('Cleaning dist/...');
 rmSync(DIST, { recursive: true, force: true });
 mkdirSync(PLUGINS_DIST, { recursive: true });
 
+// Ensure native stubs exist before esbuild bundling
+const nativeOutDir = resolve(ROOT, 'src', 'native');
+const helloEventStub = resolve(nativeOutDir, 'hello-event.js');
+const rotmgSharedStub = resolve(nativeOutDir, 'rotmg-shared.js');
+mkdirSync(nativeOutDir, { recursive: true });
+if (!existsSync(helloEventStub)) {
+  writeFileSync(helloEventStub, '// Stub\nexport function signalHelloEvent() {}\n');
+}
+if (!existsSync(rotmgSharedStub)) {
+  writeFileSync(rotmgSharedStub, '// Stub\nexport const DEFENSE_UNSET = -1;\nexport function openShared() { return false; }\nexport function readPosition() { return null; }\n');
+}
+
 // ── Step 2: Pipe key + name (open source — fixed public constants) ──────────
 
 // Open source: there are no per-build secrets. The handshake key and pipe name
@@ -106,77 +118,74 @@ log('BuildSecrets.h written (fixed public constants)');
 // ── Step 3: Build C++ DLL ────────────────────────────────────────────────────
 
 log('Building C++ DLL (Release|x64)...');
-if (!existsSync(DLL_SLN)) {
-  console.error(`[build-prod] ERROR: Solution not found: ${DLL_SLN}`);
-  process.exit(1);
-}
 
-// Locate MSBuild: prefer PATH, then vswhere, then common hard-coded paths.
-function findMSBuild() {
-  // 1. Already on PATH (Developer Command Prompt)?
-  try { execSync('msbuild /version /nologo', { stdio: 'pipe' }); return 'msbuild'; } catch {}
-
-  // 2. vswhere (ships with VS 2017+ installer, always at this fixed location).
-  // -prerelease lets it discover VS2026 previews; we drop -requires because
-  // some VS2026 installs report different component IDs.
-  const vswhere = 'C:\\Program Files (x86)\\Microsoft Visual Studio\\Installer\\vswhere.exe';
-  if (existsSync(vswhere)) {
-    for (const args of [
-      '-latest -prerelease -find MSBuild\\**\\Bin\\MSBuild.exe',
-      '-latest -prerelease -requires Microsoft.Component.MSBuild -find MSBuild\\**\\Bin\\MSBuild.exe',
-      '-latest -requires Microsoft.Component.MSBuild -find MSBuild\\**\\Bin\\MSBuild.exe',
-    ]) {
-      try {
-        const found = execSync(`"${vswhere}" ${args}`, { stdio: 'pipe' })
-          .toString().trim().split('\n')[0].trim();
-        if (found && existsSync(found)) return `"${found}"`;
-      } catch {}
-    }
+if (process.platform === 'win32') {
+  if (!existsSync(DLL_SLN)) {
+    console.error(`[build-prod] ERROR: Solution not found: ${DLL_SLN}`);
+    process.exit(1);
   }
 
-  // 3. Hard-coded fallbacks. VS2026 internal version is 18 — the installer puts
-  // BuildTools at \18\BuildTools rather than \2026\BuildTools.
-  const candidates = [
-    // VS2026 (internal version 18)
-    'C:\\Program Files\\Microsoft Visual Studio\\18\\Enterprise\\MSBuild\\Current\\Bin\\MSBuild.exe',
-    'C:\\Program Files\\Microsoft Visual Studio\\18\\Professional\\MSBuild\\Current\\Bin\\MSBuild.exe',
-    'C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\MSBuild\\Current\\Bin\\MSBuild.exe',
-    'C:\\Program Files (x86)\\Microsoft Visual Studio\\18\\BuildTools\\MSBuild\\Current\\Bin\\MSBuild.exe',
-    // VS2022
-    'C:\\Program Files\\Microsoft Visual Studio\\2022\\Enterprise\\MSBuild\\Current\\Bin\\MSBuild.exe',
-    'C:\\Program Files\\Microsoft Visual Studio\\2022\\Professional\\MSBuild\\Current\\Bin\\MSBuild.exe',
-    'C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\MSBuild\\Current\\Bin\\MSBuild.exe',
-    'C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\MSBuild\\Current\\Bin\\MSBuild.exe',
-  ];
-  for (const c of candidates) if (existsSync(c)) return `"${c}"`;
+  // Locate MSBuild: prefer PATH, then vswhere, then common hard-coded paths.
+  function findMSBuild() {
+    try { execSync('msbuild /version /nologo', { stdio: 'pipe' }); return 'msbuild'; } catch {}
 
-  return null;
-}
+    const vswhere = 'C:\\Program Files (x86)\\Microsoft Visual Studio\\Installer\\vswhere.exe';
+    if (existsSync(vswhere)) {
+      for (const args of [
+        '-latest -prerelease -find MSBuild\\**\\Bin\\MSBuild.exe',
+        '-latest -prerelease -requires Microsoft.Component.MSBuild -find MSBuild\\**\\Bin\\MSBuild.exe',
+        '-latest -requires Microsoft.Component.MSBuild -find MSBuild\\**\\Bin\\MSBuild.exe',
+      ]) {
+        try {
+          const found = execSync(`"${vswhere}" ${args}`, { stdio: 'pipe' })
+            .toString().trim().split('\n')[0].trim();
+          if (found && existsSync(found)) return `"${found}"`;
+        } catch {}
+      }
+    }
 
-const msbuild = findMSBuild();
-if (!msbuild) {
-  console.error('[build-prod] ERROR: MSBuild not found. Install Visual Studio 2022 or 2026 (any edition) or Build Tools.');
-  console.error('[build-prod] Alternatively, run this script from a Developer Command Prompt.');
-  process.exit(1);
-}
-log(`Using MSBuild: ${msbuild}`);
+    const candidates = [
+      'C:\\Program Files\\Microsoft Visual Studio\\18\\Enterprise\\MSBuild\\Current\\Bin\\MSBuild.exe',
+      'C:\\Program Files\\Microsoft Visual Studio\\18\\Professional\\MSBuild\\Current\\Bin\\MSBuild.exe',
+      'C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\MSBuild\\Current\\Bin\\MSBuild.exe',
+      'C:\\Program Files (x86)\\Microsoft Visual Studio\\18\\BuildTools\\MSBuild\\Current\\Bin\\MSBuild.exe',
+      'C:\\Program Files\\Microsoft Visual Studio\\2022\\Enterprise\\MSBuild\\Current\\Bin\\MSBuild.exe',
+      'C:\\Program Files\\Microsoft Visual Studio\\2022\\Professional\\MSBuild\\Current\\Bin\\MSBuild.exe',
+      'C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\MSBuild\\Current\\Bin\\MSBuild.exe',
+      'C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\MSBuild\\Current\\Bin\\MSBuild.exe',
+    ];
+    for (const c of candidates) if (existsSync(c)) return `"${c}"`;
 
-try {
-  // /t:Rebuild (not incremental): BuildSecrets.h is regenerated above with a
-  // fresh per-build handshake key. An incremental build can leave Handshake.obj
-  // "up to date" and ship the DLL with a stale key while the JS bundle gets the
-  // new one — the DLL then injects but fails pipe auth, so every setFeature
-  // (dodge, hitbox, ...) is silently dropped. A clean rebuild guarantees the
-  // key in the DLL matches __HANDSHAKE_KEY__ baked into the bundle.
-  // 10 min: a clean full compile of the DLL (~7000+ functions) can exceed
-  // the old 2-minute cap, especially on CI or after node-gyp wipes caches.
-  execSync(
-    `${msbuild} "${DLL_SLN}" /t:Rebuild /p:Configuration=Release /p:Platform=x64 /m /v:minimal`,
-    { stdio: 'inherit', timeout: 600000 }
-  );
-} catch (err) {
-  console.error('[build-prod] ERROR: MSBuild failed.');
-  process.exit(1);
+    return null;
+  }
+
+  const msbuild = findMSBuild();
+  if (!msbuild) {
+    console.error('[build-prod] ERROR: MSBuild not found. Install Visual Studio 2022 or 2026 (any edition) or Build Tools.');
+    console.error('[build-prod] Alternatively, run this script from a Developer Command Prompt.');
+    process.exit(1);
+  }
+  log(`Using MSBuild: ${msbuild}`);
+
+  try {
+    execSync(
+      `${msbuild} "${DLL_SLN}" /t:Rebuild /p:Configuration=Release /p:Platform=x64 /m /v:minimal`,
+      { stdio: 'inherit', timeout: 600000 }
+    );
+  } catch (err) {
+    console.error('[build-prod] ERROR: MSBuild failed.');
+    process.exit(1);
+  }
+} else {
+  // Non-Windows (Linux / macOS): use llvm-mingw cross-compiler script
+  const linuxBuildScript = join(INTERNAL_DIR, 'build-linux.sh');
+  log(`Using Linux cross-compilation build script: ${linuxBuildScript}`);
+  try {
+    execSync(`bash "${linuxBuildScript}"`, { stdio: 'inherit', timeout: 600000 });
+  } catch (err) {
+    console.error('[build-prod] ERROR: Linux DLL cross-compilation failed.');
+    process.exit(1);
+  }
 }
 
 const dllBuilt = DLL_BUILD_CANDIDATES.find((p) => existsSync(p));

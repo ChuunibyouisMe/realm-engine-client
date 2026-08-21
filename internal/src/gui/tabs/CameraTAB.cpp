@@ -247,9 +247,9 @@ static void DoRefresh()
     // The obfuscator reused the name "inputModule" for both the Camera field (0x50
     // in the Apr 6 dump) and a separate CustomInputModule field (0x58), so we can't
     // trust get_field_from_name alone — we iterate and disambiguate by type.
-    uint32_t camFieldOff = OFF_CM_UNITY_CAM; // hardcoded fallback
-    bool     camFieldResolved = false;
-    {
+    static uint32_t camFieldOff = OFF_CM_UNITY_CAM;
+    static bool     camFieldResolved = false;
+    if (!camFieldResolved) {
         Il2CppClass* cmKlass = il2cpp_object_get_class(camMgrObj);
         if (cmKlass) {
             void* iter = nullptr;
@@ -270,10 +270,6 @@ static void DoRefresh()
                     break;
                 }
             }
-        }
-        if (!camFieldResolved) {
-            DBG_FILE_LOG("[CameraTAB] UnityCam field NOT found dynamically — using fallback 0x"
-                << std::hex << OFF_CM_UNITY_CAM << std::dec);
         }
     }
     void* unityCam = nullptr;

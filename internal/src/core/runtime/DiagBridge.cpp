@@ -10,7 +10,7 @@
 #include "PJDodge.h"
 #include "settings.h"
 
-#include <Windows.h>
+#include <windows.h>
 #include <cstdio>
 #include <cstring>
 #include <cstdint>

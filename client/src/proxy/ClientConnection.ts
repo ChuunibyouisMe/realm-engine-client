@@ -321,6 +321,7 @@ export class ClientConnection {
   }
 
   private onClientData(data: Buffer): void {
+    Logger.log('Client', `[DIAG-onClientData] Received ${data.length} bytes (raw=${data.subarray(0, Math.min(32, data.length)).toString('hex')})`);
     this.processIncoming(data, true);
   }
 

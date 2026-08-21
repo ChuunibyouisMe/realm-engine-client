@@ -28,7 +28,7 @@ void il2cppi_new_console() {
  freopen_s((FILE**)stdout, "CONOUT$", "w", stdout);
 }
 
-#if _MSC_VER >= 1920
+#if !defined(_MSC_VER) || (_MSC_VER >= 1920)
 // Helper function to convert Il2CppString to std::string
 std::string il2cppi_to_string(Il2CppString* str) {
  if (!str)

@@ -9,7 +9,7 @@
 //   code can call FeatureRuntime directly.
 
 #pragma once
-#include <Windows.h>
+#include <windows.h>
 #include <cstdint>
 
 // Named pipe IPC bridge between the injected DLL and the Node client.

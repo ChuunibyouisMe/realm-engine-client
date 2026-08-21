@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Windows.h>
+#include <windows.h>
 #include <string>
 #include <vector>
 
@@ -33,6 +33,7 @@ namespace Resolver {
             }
         }
 
+        void EnsureThreadAttached();
         Il2CppObject* SafeRuntimeInvoke(const MethodInfo* method, Il2CppObject* obj, void** params = nullptr);
 
         template<typename T>

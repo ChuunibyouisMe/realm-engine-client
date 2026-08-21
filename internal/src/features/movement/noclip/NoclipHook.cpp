@@ -4,7 +4,7 @@
 #include "Il2CppResolver.h"
 #include "minhook/MinHook.h"
 
-#include <Windows.h>
+#include <windows.h>
 #include <array>
 #include <atomic>
 #include <cstdint>
@@ -52,7 +52,8 @@ static bool     s_resolved   = false;
 static bool     s_installed  = false;
 static uint64_t s_nextTryMs  = 0;
 
-static inline bool AddrOk(const void* p)
+template<typename T>
+static inline bool AddrOk(T p)
 {
     const uintptr_t a = reinterpret_cast<uintptr_t>(p);
     return a > 0x10000u && a < 0x7FFFFFFFFFFFull;
