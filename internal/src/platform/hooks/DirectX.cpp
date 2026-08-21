@@ -248,7 +248,33 @@ HRESULT __stdcall dPresent(IDXGISwapChain* __this, UINT SyncInterval, UINT Flags
 		}
 	}
 
+	static IDXGISwapChain* s_lastSwapChain = nullptr;
+	if (s_lastSwapChain != __this) {
+		s_lastSwapChain = __this;
+		if (pRenderTargetView) {
+			pRenderTargetView->Release();
+			pRenderTargetView = nullptr;
+		}
+	}
+
 	if (settings.ImGuiInitialized && DirectX::hRenderSemaphore && WaitForSingleObject(DirectX::hRenderSemaphore, 0) == WAIT_OBJECT_0) {
+		ID3D11Device* curDevice = nullptr;
+		if (SUCCEEDED(__this->GetDevice(__uuidof(ID3D11Device), (void**)&curDevice)) && curDevice) {
+			if (DirectX::pDevice && DirectX::pDevice != curDevice) {
+				DBG_FILE_LOG("[DirectX] Device migrated from " << (void*)DirectX::pDevice << " to " << (void*)curDevice);
+				if (pRenderTargetView) { pRenderTargetView->Release(); pRenderTargetView = nullptr; }
+				if (DirectX::pContext) { DirectX::pContext->Release(); DirectX::pContext = nullptr; }
+				if (DirectX::pDevice) { DirectX::pDevice->Release(); DirectX::pDevice = nullptr; }
+
+				DirectX::pDevice = curDevice;
+				DirectX::pDevice->GetImmediateContext(&DirectX::pContext);
+				ImGui_ImplDX11_Shutdown();
+				ImGui_ImplDX11_Init(DirectX::pDevice, DirectX::pContext);
+			} else {
+				curDevice->Release();
+			}
+		}
+
 		if (!pRenderTargetView && DirectX::pDevice) {
 			ID3D11Texture2D* pBackBuffer = nullptr;
 			if (SUCCEEDED(__this->GetBuffer(0, __uuidof(ID3D11Texture2D), (void**)&pBackBuffer)) && pBackBuffer) {

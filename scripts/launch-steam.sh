@@ -20,29 +20,55 @@ fi
 install_hook_dlls() {
     local target_dir="$1"
     if [ -d "$target_dir" ]; then
-        echo "[Steam Launcher] Installing hook DLLs into: $target_dir"
-        cp -f "$ASSETS_DIR/version.dll" "$target_dir/version.dll" 2>/dev/null || true
-        cp -f "$ASSETS_DIR/winhttp.dll" "$target_dir/winhttp.dll" 2>/dev/null || true
+        if [ ! -f "$target_dir/version.dll" ] || ! cmp -s "$ASSETS_DIR/version.dll" "$target_dir/version.dll" 2>/dev/null; then
+            echo "[Steam Launcher] Installing version.dll into: $target_dir"
+            cp -f "$ASSETS_DIR/version.dll" "$target_dir/version.dll" 2>/dev/null || true
+            chmod 755 "$target_dir/version.dll" 2>/dev/null || true
+        fi
+        if [ ! -f "$target_dir/winhttp.dll" ] || ! cmp -s "$ASSETS_DIR/winhttp.dll" "$target_dir/winhttp.dll" 2>/dev/null; then
+            echo "[Steam Launcher] Installing winhttp.dll into: $target_dir"
+            cp -f "$ASSETS_DIR/winhttp.dll" "$target_dir/winhttp.dll" 2>/dev/null || true
+            chmod 755 "$target_dir/winhttp.dll" 2>/dev/null || true
+        fi
     fi
 }
 
-# Search active Steam compatdata prefixes and common paths
-for prefix_dir in "$HOME/.local/share/Steam/steamapps/compatdata"/* "/run/media"/*/*/"SteamLibrary/steamapps/compatdata"/* "$HOME/.var/app/com.valvesoftware.Steam/data/Steam/steamapps/compatdata"/*; do
-    for user_dir in "$prefix_dir/pfx/drive_c/users"/*; do
-        prod_path="$user_dir/AppData/Local/RealmOfTheMadGod/Production"
-        if [ -d "$prod_path" ]; then
-            install_hook_dlls "$prod_path"
+sync_all_directories() {
+    # Search active Steam compatdata prefixes and common paths
+    for prefix_dir in "$HOME/.local/share/Steam/steamapps/compatdata"/* "/run/media"/*/*/"SteamLibrary/steamapps/compatdata"/* "$HOME/.var/app/com.valvesoftware.Steam/data/Steam/steamapps/compatdata"/*; do
+        for user_dir in "$prefix_dir/pfx/drive_c/users"/*; do
+            local prod_path="$user_dir/AppData/Local/RealmOfTheMadGod/Production"
+            if [ -d "$prod_path" ]; then
+                install_hook_dlls "$prod_path"
+            fi
+            local doc_path="$user_dir/Documents/RealmOfTheMadGod/Production"
+            if [ -d "$doc_path" ]; then
+                install_hook_dlls "$doc_path"
+            fi
+        done
+    done
+
+    # If passed an explicit executable path in arguments
+    for arg in "$@"; do
+        if [[ "$arg" == *"RotMG"* ]] || [[ "$arg" == *"Production"* ]] || [[ "$arg" == *"Realm"* ]]; then
+            local dir_arg="$(dirname "$arg")"
+            install_hook_dlls "$dir_arg"
         fi
     done
-done
+}
 
-# If passed an explicit executable path in arguments
-for arg in "$@"; do
-    if [[ "$arg" == *"RotMG Exalt"* ]] || [[ "$arg" == *"Production"* ]]; then
-        dir_arg="$(dirname "$arg")"
-        install_hook_dlls "$dir_arg"
-    fi
-done
+# Initial synchronization before game launch
+sync_all_directories "$@"
+
+# Start continuous watchdog loop in the background to re-inject DLLs if Deca launcher wipes them
+(
+    while true; do
+        sync_all_directories "$@"
+        sleep 1
+    done
+) &
+WATCHER_PID=$!
+trap "kill -9 $WATCHER_PID 2>/dev/null || true" EXIT INT TERM
 
 # 3. Locate Node.js binary
 NODE_BIN=""
@@ -74,8 +100,8 @@ if ! pgrep -f "dist/app.cjs" > /dev/null && ! pgrep -f "tsx src/index.ts" > /dev
 fi
 
 # 5. Configure DLL overrides for Proton / Wine so winhttp.dll and version.dll are loaded
-export WINEDLLOVERRIDES="winhttp=n,b;version=n,b"
+export WINEDLLOVERRIDES="version=n,b;winhttp=n,b;version.dll=n,b;winhttp.dll=n,b"
 export REALM_ENGINE_SKIP_WINHTTP_INSTALL=0
 
 # 6. Launch the actual game passed from Steam (%command%)
-exec "$@"
+"$@"
