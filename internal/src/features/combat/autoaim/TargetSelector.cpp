@@ -110,8 +110,8 @@ Result Select(const Config& cfg,
     const std::vector<EnemyTracker::Entry>& snap = EnemyTracker::GetSnapshot();
 
     const float weaponRange = (weapon.rangeTiles > 2.f) ? weapon.rangeTiles : 15.f;
-    const float magnetOffset = CombatTAB::FeatMagnetAim::IsEnabled() ? CombatTAB::FeatMagnetAim::GetVisualOffsetTiles() : 0.f;
-    const float maxWeaponRange = weaponRange + cfg.rangeLeadBias + magnetOffset;
+    const float magnetOffset = (cfg.magnetAim && cfg.magnetRangeExt) ? cfg.magnetAimRange : (CombatTAB::FeatMagnetAim::IsEnabled() ? CombatTAB::FeatMagnetAim::GetVisualOffsetTiles() : 0.f);
+    const float maxWeaponRange = weaponRange + magnetOffset + (cfg.predictiveAim ? (cfg.predictiveLead * 0.5f) : 0.f);
     const float maxWeaponRangeSq = maxWeaponRange * maxWeaponRange;
 
     // ── Locked mode: bypass all tier logic ──────────────────────────────────
@@ -128,12 +128,12 @@ Result Select(const Config& cfg,
 
             float aimX = e.x, aimY = e.y;
             const float projSpeed = (weapon.avgSpeedTps > 0.1f) ? weapon.avgSpeedTps : 16.0f;
-            if (projSpeed > 0.1f) {
+            if (cfg.predictiveAim && projSpeed > 0.1f) {
                 const float dist = sqrtf((aimX - playerX) * (aimX - playerX) + (aimY - playerY) * (aimY - playerY));
                 float travelTime = dist / projSpeed;
                 const float maxTime = (weapon.lifetimeMs > 0.f) ? (weapon.lifetimeMs / 1000.f) : 1.5f;
                 travelTime = (std::min)(travelTime, maxTime);
-                const float lead = std::clamp(cfg.rangeLeadBias, 0.0f, 2.5f);
+                const float lead = std::clamp(cfg.predictiveLead, 0.0f, 2.5f);
                 aimX += (e.vx * 1000.f) * travelTime * lead;
                 aimY += (e.vy * 1000.f) * travelTime * lead;
             }
@@ -254,14 +254,14 @@ Result Select(const Config& cfg,
     float aimX = winner->bestX;
     float aimY = winner->bestY;
     const float projSpeed = (weapon.avgSpeedTps > 0.1f) ? weapon.avgSpeedTps : 16.0f;
-    if (projSpeed > 0.1f) {
+    if (cfg.predictiveAim && projSpeed > 0.1f) {
         const float dx = aimX - launchX;
         const float dy = aimY - launchY;
         const float dist = sqrtf(dx * dx + dy * dy);
         float travelTime = dist / projSpeed;
         const float maxTime = (weapon.lifetimeMs > 0.f) ? (weapon.lifetimeMs / 1000.f) : 1.5f;
         travelTime = (std::min)(travelTime, maxTime);
-        const float lead = std::clamp(cfg.rangeLeadBias, 0.0f, 2.5f);
+        const float lead = std::clamp(cfg.predictiveLead, 0.0f, 2.5f);
         aimX += (winner->bestVx * 1000.f) * travelTime * lead;
         aimY += (winner->bestVy * 1000.f) * travelTime * lead;
     }

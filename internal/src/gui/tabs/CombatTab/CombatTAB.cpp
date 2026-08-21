@@ -47,38 +47,7 @@ void SetWizardAbilityTargetMode(int) {}
 void Render()
 {
     ImGui::Spacing();
-    ImGui::TextColored(ImVec4(1.f, 0.45f, 0.35f, 1.f), "COMBAT");
-    ImGui::Separator();
-    ImGui::Spacing();
-
     FeatAutoAim::Render();
-
-    ImGui::Spacing();
-    ImGui::Separator();
-    ImGui::Spacing();
-
-    FeatMagnetAim::Render();
-
-    ImGui::Spacing();
-    ImGui::TextUnformatted("Local shot spawn offset (tiles along aim)");
-    const bool magnetAimOn = FeatMagnetAim::IsEnabled();
-    ImGui::BeginDisabled(magnetAimOn);
-    ImGui::PushItemWidth(220.f);
-    float muzzle = ProjectileTracking::GetLocalPlayerMuzzleOffsetTiles();
-    if (ImGui::SliderFloat("##muzzleTiles", &muzzle, 0.3f, 2.225f, "%.3f")) {
-        ProjectileTracking::SetLocalPlayerMuzzleOffsetTiles(muzzle);
-    }
-    ImGui::PopItemWidth();
-    ImGui::SameLine();
-    if (ImGui::Button("Reset##muzzleTiles")) {
-        ProjectileTracking::SetLocalPlayerMuzzleOffsetTiles(0.3f);
-    }
-    ImGui::EndDisabled();
-    if (magnetAimOn)
-        ImGui::TextDisabled("Manual spawn offset is overridden while Magnet Aim is enabled.");
-    ImGui::TextDisabled("Vanilla ~0.3; at 0.3 the hook skips retargeting (no extra trig).");
-    ImGui::Checkbox("Debug: weapon range ring + last spawn dot##muzzleDbg", &g_muzzleWeaponRangeDebug);
-    ImGui::TextDisabled("Uses AutoAim range + last local SpawnProjectile world position.");
 
     ImGui::Spacing();
     ImGui::Separator();

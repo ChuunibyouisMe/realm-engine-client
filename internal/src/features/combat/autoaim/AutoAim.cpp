@@ -24,16 +24,26 @@ static inline bool AddrOk(const void* p) {
 
 // ── Frame-level state ─────────────────────────────────────────────────────────
 static std::atomic<bool>    s_enabled{ false };
-static std::atomic<int>     s_aimModeInt{ 2 }; // 2 = ClosestToMouse
+static std::atomic<int>     s_aimModeInt{ 2 }; // 0 = Distance, 1 = Health, 2 = Cursor (ClosestToMouse)
 static std::atomic<int32_t> s_lockedEnemyId{ -1 };
 
 static std::atomic<bool>    s_shootInvulnerable{ true };
 static std::atomic<bool>    s_prioritizeBosses{ false };
 static std::atomic<bool>    s_ignoreWalls{ false };
 static std::atomic<bool>    s_shootWhileStealthed{ true };
-static std::atomic<bool>    s_mouseBoundingEnabled{ true };
+static std::atomic<bool>    s_mouseBoundingEnabled{ false };
 static std::atomic<float>   s_mouseBoundingRange{ 2.5f };
 static std::atomic<float>   s_rangeLeadBias{ 0.9f };
+
+static std::atomic<bool>    s_predictiveAim{ true };
+static std::atomic<float>   s_predictiveLead{ 1.0f };
+static std::atomic<bool>    s_magnetAim{ true };
+static std::atomic<bool>    s_magnetRangeExt{ true };
+static std::atomic<float>   s_magnetAimRange{ 1.8f };
+static std::atomic<bool>    s_renderMagnetRange{ true };
+static std::atomic<bool>    s_renderNormalAimRange{ true };
+static std::atomic<bool>    s_renderAimInfo{ true };
+
 static std::atomic<bool>    s_reverseCultStaff{ false };
 static std::atomic<bool>    s_offsetColossus{ false };
 
@@ -96,6 +106,11 @@ static void RunTick()
     cfg.rangeLeadBias        = s_rangeLeadBias.load(std::memory_order_relaxed);
     cfg.mouseBoundingEnabled = s_mouseBoundingEnabled.load(std::memory_order_relaxed);
     cfg.mouseBoundingRange   = s_mouseBoundingRange.load(std::memory_order_relaxed);
+    cfg.predictiveAim        = s_predictiveAim.load(std::memory_order_relaxed);
+    cfg.predictiveLead       = s_predictiveLead.load(std::memory_order_relaxed);
+    cfg.magnetAim            = s_magnetAim.load(std::memory_order_relaxed);
+    cfg.magnetRangeExt       = s_magnetRangeExt.load(std::memory_order_relaxed);
+    cfg.magnetAimRange       = s_magnetAimRange.load(std::memory_order_relaxed);
     cfg.lockedEnemyId        = s_lockedEnemyId.load(std::memory_order_relaxed);
     cfg.skipObjTypes         = s_skipObjTypes;
     cfg.skipObjCount         = s_skipObjCount;
@@ -198,6 +213,33 @@ void SetRangeLeadBias(float t)         {
     s_rangeLeadBias.store(t, std::memory_order_relaxed);
 }
 float GetRangeLeadBias()               { return s_rangeLeadBias.load(std::memory_order_relaxed); }
+
+void SetPredictiveAim(bool on)   { s_predictiveAim.store(on, std::memory_order_relaxed); }
+bool IsPredictiveAim()           { return s_predictiveAim.load(std::memory_order_relaxed); }
+void SetPredictiveLead(float v)  {
+    if (!std::isfinite(v) || v < 0.f) v = 0.f;
+    if (v > 5.f) v = 5.f;
+    s_predictiveLead.store(v, std::memory_order_relaxed);
+}
+float GetPredictiveLead()         { return s_predictiveLead.load(std::memory_order_relaxed); }
+
+void SetMagnetAim(bool on)       { s_magnetAim.store(on, std::memory_order_relaxed); }
+bool IsMagnetAim()               { return s_magnetAim.load(std::memory_order_relaxed); }
+void SetMagnetRangeExt(bool on)  { s_magnetRangeExt.store(on, std::memory_order_relaxed); }
+bool IsMagnetRangeExt()          { return s_magnetRangeExt.load(std::memory_order_relaxed); }
+void SetMagnetAimRange(float r)  {
+    if (!std::isfinite(r) || r < 0.1f) r = 0.1f;
+    if (r > 20.f) r = 20.f;
+    s_magnetAimRange.store(r, std::memory_order_relaxed);
+}
+float GetMagnetAimRange()        { return s_magnetAimRange.load(std::memory_order_relaxed); }
+
+void SetRenderMagnetRange(bool on)    { s_renderMagnetRange.store(on, std::memory_order_relaxed); }
+bool IsRenderMagnetRange()            { return s_renderMagnetRange.load(std::memory_order_relaxed); }
+void SetRenderNormalAimRange(bool on) { s_renderNormalAimRange.store(on, std::memory_order_relaxed); }
+bool IsRenderNormalAimRange()         { return s_renderNormalAimRange.load(std::memory_order_relaxed); }
+void SetRenderAimInfo(bool on)        { s_renderAimInfo.store(on, std::memory_order_relaxed); }
+bool IsRenderAimInfo()                { return s_renderAimInfo.load(std::memory_order_relaxed); }
 
 void SetReverseCultStaff(bool on)    { s_reverseCultStaff.store(on, std::memory_order_relaxed); AimHooks::SetReverseCultStaff(on); }
 bool IsReverseCultStaff()            { return s_reverseCultStaff.load(std::memory_order_relaxed); }
