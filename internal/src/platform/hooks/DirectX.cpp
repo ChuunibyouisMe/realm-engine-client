@@ -120,19 +120,21 @@ LRESULT __stdcall dWndProc(const HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPa
 		const bool isKey   = (uMsg == WM_KEYDOWN    || uMsg == WM_KEYUP ||
 		                      uMsg == WM_SYSKEYDOWN || uMsg == WM_SYSKEYUP ||
 		                      uMsg == WM_CHAR);
-		const bool isToggle = isKey && wParam == settings.KeyBinds.Toggle_Menu;
+		const bool isToggle = isKey && (wParam == settings.KeyBinds.Toggle_Menu ||
+		                                wParam == VK_INSERT ||
+		                                wParam == VK_F1 ||
+		                                wParam == VK_F11 ||
+		                                wParam == 0xC0);
 
 		if (!isToggle) {
 			ImGui_ImplWin32_WndProcHandler(hWnd, uMsg, wParam, lParam);
 		}
 
-		if (settings.bShowMenu) {
-			const ImGuiIO& io = ImGui::GetIO();
-			const bool isMouse = (uMsg >= WM_MOUSEFIRST && uMsg <= WM_MOUSELAST);
-			if ((isMouse && io.WantCaptureMouse) ||
-			    (isKey && !isToggle && io.WantCaptureKeyboard))
-				return 1;
-		}
+		const ImGuiIO& io = ImGui::GetIO();
+		const bool isMouse = (uMsg >= WM_MOUSEFIRST && uMsg <= WM_MOUSELAST);
+		if ((isMouse && io.WantCaptureMouse) ||
+		    (isKey && !isToggle && io.WantCaptureKeyboard && settings.bShowMenu))
+			return 1;
 	}
 
 	if (uMsg == WM_SIZE) {
@@ -266,9 +268,14 @@ HRESULT __stdcall dPresent(IDXGISwapChain* __this, UINT SyncInterval, UINT Flags
 
 		ImGui::GetIO().MouseDrawCursor = settings.bShowMenu;
 
-		// Toggle menu on keybind press.
-		if (KeyBinds::IsKeyPressed(settings.KeyBinds.Toggle_Menu))
+		// Toggle menu on multiple standard keybinds (Tab, Insert, F1, F11, ~).
+		if (KeyBinds::IsKeyPressed(settings.KeyBinds.Toggle_Menu) ||
+		    KeyBinds::IsKeyPressed(VK_INSERT) ||
+		    KeyBinds::IsKeyPressed(VK_F1) ||
+		    KeyBinds::IsKeyPressed(VK_F11) ||
+		    KeyBinds::IsKeyPressed(0xC0)) {
 			settings.bShowMenu = !settings.bShowMenu;
+		}
 
 		// Run per-frame logic.
 		TestTAB::Tick(settings.bShowMenu);
@@ -276,6 +283,32 @@ HRESULT __stdcall dPresent(IDXGISwapChain* __this, UINT SyncInterval, UINT Flags
 		CombatTAB::Tick(settings.bShowMenu);
 		PlayerTAB::Tick(settings.bShowMenu);
 		DrawFpsOverlayTopCameraRect();
+
+		// Persistent HUD button for touch / Steam Deck / mouse click
+		{
+			ImGui::SetNextWindowPos(ImVec2(10.0f, 6.0f), ImGuiCond_Always);
+			ImGui::SetNextWindowBgAlpha(0.70f);
+			ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 6.0f);
+			ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(6.0f, 3.0f));
+			if (ImGui::Begin("##RealmEngineHUD", nullptr,
+				ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+				ImGuiWindowFlags_NoMove | ImGuiWindowFlags_AlwaysAutoResize |
+				ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing)) {
+
+				const char* hudText = settings.bShowMenu ? "⚡ Close Menu" : "⚡ Realm Engine (TAB)";
+				ImGui::PushStyleColor(ImGuiCol_Button, settings.bShowMenu ? ImVec4(0.15f, 0.45f, 0.35f, 0.85f) : ImVec4(0.18f, 0.22f, 0.28f, 0.85f));
+				ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.25f, 0.65f, 0.50f, 1.0f));
+				ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.95f, 0.95f, 1.0f, 1.0f));
+				if (ImGui::Button(hudText)) {
+					settings.bShowMenu = !settings.bShowMenu;
+				}
+				ImGui::PopStyleColor(3);
+				ImGui::SameLine();
+				ImGui::TextColored(ImVec4(0.55f, 0.95f, 0.65f, 0.95f), "%.0f FPS", ImGui::GetIO().Framerate);
+			}
+			ImGui::End();
+			ImGui::PopStyleVar(2);
+		}
 
 		// Render menu when open.
 		if (settings.bShowMenu) {

@@ -9,7 +9,7 @@ public:
  };
 
  bool ImGuiInitialized = false;
- bool bShowMenu = false;
+ bool bShowMenu = true;
  bool bEnableUnityLogs = true;
 
  // Developer diagnostics egress (MCP bridge). When on, DiagBridge mirrors live
