@@ -27,8 +27,8 @@ static std::atomic<bool>    s_enabled{ false };
 static std::atomic<int>     s_aimModeInt{ 0 };
 static std::atomic<int32_t> s_lockedEnemyId{ -1 };
 
-static std::atomic<bool>    s_shootInvulnerable{ false };
-static std::atomic<bool>    s_prioritizeBosses{ false };
+static std::atomic<bool>    s_shootInvulnerable{ true };
+static std::atomic<bool>    s_prioritizeBosses{ true };
 static std::atomic<bool>    s_ignoreWalls{ true };
 static std::atomic<bool>    s_shootWhileStealthed{ true };
 static std::atomic<bool>    s_mouseBoundingEnabled{ true };

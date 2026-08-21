@@ -11,7 +11,7 @@ export const DEFAULT_MIN_RING_TIER = 6;
 
 // ─── Timing / loop tuning ──────────────────────────────────────────────────────
 /** Spacing between *consecutive* pickups/drinks; the first pickup on a bag is immediate. */
-export const PICKUP_INTERVAL_MS = 250;
+export const PICKUP_INTERVAL_MS = 320;
 export const RETRY_ITEM_AFTER_MS = 1500;
 export const PENDING_DEST_TIMEOUT_MS = 1200;
 export const DEST_SLOT_RESERVE_MS = 30000;

@@ -177,7 +177,10 @@ export function sendUseItemFromBag(
   const packet = ctx.createPacket('USEITEM');
   packet.data.time = Math.trunc(client.time);
   packet.data.slotObject = { objectId: bag.objectId, slotId: bagSlot, objectType: itemId };
-  packet.data.itemUsePos = { x: 0, y: 0 };
+  packet.data.itemUsePos = {
+    x: Number(client.playerData.pos?.x ?? bag.pos?.x ?? 0),
+    y: Number(client.playerData.pos?.y ?? bag.pos?.y ?? 0),
+  };
   packet.data.useType = 0;
   packet.data.unknownInt = 0;
   packet.modified = true;

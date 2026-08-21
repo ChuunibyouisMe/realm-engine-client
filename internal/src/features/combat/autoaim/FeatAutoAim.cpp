@@ -15,8 +15,8 @@ namespace FeatAutoAim {
 static bool  s_aimEnabled          = false;
 static int   s_aimMode             = 0;
 static bool  s_noclipEnabled       = false;
-static bool  s_shootInvulnerable   = false;
-static bool  s_prioritizeBosses    = false;
+static bool  s_shootInvulnerable   = true;
+static bool  s_prioritizeBosses    = true;
 static bool  s_ignoreWalls         = true;
 static bool  s_reverseCultStaff    = true;
 static bool  s_offsetColossusSword = false;

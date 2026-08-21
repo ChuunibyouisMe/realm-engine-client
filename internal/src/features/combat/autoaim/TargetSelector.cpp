@@ -127,21 +127,20 @@ Result Select(const Config& cfg,
 
         // Soft filters
         if (cfg.ignoreWalls && !e.hasHealthBar) goto next_entry;
-        if (e.isInvulnerable && !cfg.shootInvulnerable) goto next_entry;
+        if (e.isInvulnerable && !cfg.shootInvulnerable && (!cfg.prioritizeBosses || !IsQuestType(e.objType))) goto next_entry;
 
         {
+            const bool isQuest = IsQuestType(e.objType);
             const float dx = e.x - refX, dy = e.y - refY;
             const float distSq = dx * dx + dy * dy;
             if (distSq > maxRangeSq) goto next_entry;
 
-            const bool isQuest      = IsQuestType(e.objType);
             const bool whitelisted  = IsWhitelistedType(e.objType);
             const bool isFallback   = IsFallbackType(e.objType);
 
             if (cfg.prioritizeBosses && isQuest && !whitelisted) {
                 TierUpdate(quest, useHighestHp, distSq, e.hp, e.x, e.y, e.vx, e.vy, e.id, e.objType);
             } else if (e.isInvulnerable) {
-                // Only reachable when shootInvulnerable == true (filtered above otherwise)
                 TierUpdate(invuln, useHighestHp, distSq, e.hp, e.x, e.y, e.vx, e.vy, e.id, e.objType);
             } else if (isFallback) {
                 TierUpdate(fallback, useHighestHp, distSq, e.hp, e.x, e.y, e.vx, e.vy, e.id, e.objType);

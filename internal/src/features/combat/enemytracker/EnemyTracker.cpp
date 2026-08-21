@@ -175,12 +175,9 @@ static bool SehReadCandidate(uint8_t* entry, void* local, uint64_t localKlass, C
         // noHealthBar (walls/destructibles) — stored as metadata, not hard-rejected
         const uint8_t noHB = *reinterpret_cast<uint8_t*>(op + kOffOpNoHealthBar);
 
-        // XML <Invincible/> — reject if InvincibleElement pointer exists (regardless of string)
+        // XML <Invincible/> — mark as invulnerable rather than hard-rejecting
         void* invPtr = *reinterpret_cast<void**>(op + kOffOpInvincElem);
-        if (invPtr && AddrOk(invPtr))
-            return false;
-
-        bool isInvuln = false;
+        bool isInvuln = (invPtr && AddrOk(invPtr));
 
         const int32_t hp    = *reinterpret_cast<int32_t*>(ent + kOffHp);
         const int32_t maxHp = *reinterpret_cast<int32_t*>(ent + kOffMaxHp);
@@ -195,11 +192,19 @@ static bool SehReadCandidate(uint8_t* entry, void* local, uint64_t localKlass, C
                 return false;
         }
 
-        // Runtime condition check (stasis / runtime invincible)
+        // Runtime condition check (Dead drops immediately; Stasis/Invincible/Invulnerable set isInvuln)
         uint32_t cond0 = 0, cond1 = 0;
         const bool condOk = RuntimeOffsets::TryReadMapObjectConditions(entity, &cond0, &cond1);
-        if (condOk && (cond0 | cond1) && RuntimeOffsets::MapObjectConditionsMakeUntargetable(cond0, cond1))
-            return false;
+        if (condOk && (cond0 | cond1)) {
+            const uint64_t full = RuntimeOffsets::GetFullConditions(cond0, cond1);
+            if (RuntimeOffsets::HasCondition(full, RuntimeOffsets::ConditionEffects::Dead))
+                return false;
+            if (RuntimeOffsets::HasCondition(full, RuntimeOffsets::ConditionEffects::Stasis) ||
+                RuntimeOffsets::HasCondition(full, RuntimeOffsets::ConditionEffects::Invincible) ||
+                RuntimeOffsets::HasCondition(full, RuntimeOffsets::ConditionEffects::Invulnerable)) {
+                isInvuln = true;
+            }
+        }
 
         const float ex2 = *reinterpret_cast<float*>(ent + kOffPosX);
         const float ey2 = *reinterpret_cast<float*>(ent + kOffPosY);
