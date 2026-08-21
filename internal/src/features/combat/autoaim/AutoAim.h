@@ -52,26 +52,6 @@ float GetMouseBoundingRange();
 void  SetRangeLeadBias(float tiles);
 float GetRangeLeadBias();
 
-// ── Predictive aim & Magnet aim (claudebawt-deck 1:1) ─────────────────────────
-void  SetPredictiveAim(bool on);
-bool  IsPredictiveAim();
-void  SetPredictiveLead(float v);
-float GetPredictiveLead();
-
-void  SetMagnetAim(bool on);
-bool  IsMagnetAim();
-void  SetMagnetRangeExt(bool on);
-bool  IsMagnetRangeExt();
-void  SetMagnetAimRange(float r);
-float GetMagnetAimRange();
-
-void  SetRenderMagnetRange(bool on);
-bool  IsRenderMagnetRange();
-void  SetRenderNormalAimRange(bool on);
-bool  IsRenderNormalAimRange();
-void  SetRenderAimInfo(bool on);
-bool  IsRenderAimInfo();
-
 // ── Weapon-specific tweaks ────────────────────────────────────────────────────
 void SetReverseCultStaff(bool on);
 bool IsReverseCultStaff();

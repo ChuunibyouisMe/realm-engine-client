@@ -15,11 +15,11 @@
 namespace {
 
 // ── IL2CPP method names ───────────────────────────────────────────────────────
-static const char* kShootClass    = "FKALGHJIADI";
-static const char* kSWAMethod     = "EHGHCACPAGH"; // ShootWithAngle
+static const char* kShootClass = "FKALGHJIADI";
+static const char* kSWAMethod  = "EHGHCACPAGH"; // ShootWithAngle
 
-static const uint32_t& kOffPosX   = RuntimeOffsets::PosX;
-static const uint32_t& kOffPosY   = RuntimeOffsets::PosY;
+static const uint32_t& kOffPosX = RuntimeOffsets::PosX;
+static const uint32_t& kOffPosY = RuntimeOffsets::PosY;
 
 // ── Weapon-specific proj IDs ──────────────────────────────────────────────────
 static constexpr int32_t kProjIdCultStaff    = 0xB0EB; // Staff of Unholy Sacrifice
@@ -36,9 +36,9 @@ static std::atomic<bool>  s_enabled{ false };
 // ── Hook function-pointer types ───────────────────────────────────────────────
 using ShootWithAngleFn = void(__fastcall*)(void*, float, void*);
 
-static ShootWithAngleFn g_swaOrig = nullptr;
-static void* g_swaTarget = nullptr;
-static bool  s_installed = false;
+static ShootWithAngleFn g_swaOrig   = nullptr;
+static void*            g_swaTarget = nullptr;
+static bool             s_installed = false;
 
 static inline bool AddrOk(const void* p) {
     const uintptr_t a = reinterpret_cast<uintptr_t>(p);
@@ -57,12 +57,14 @@ static float ApplyWeaponTweaks(float angle)
 
 static bool ShouldRedirect(void* player)
 {
+    if (!s_enabled.load(std::memory_order_relaxed)) return false;
     if (!s_hasTarget.load(std::memory_order_relaxed)) return false;
     if (!AddrOk(player)) return false;
     void* local = GameState::GetLocalPtr();
     return local && player == local;
 }
 
+// ── Detour implementations ────────────────────────────────────────────────────
 void __fastcall ShootWithAngleDetour(void* player, float angle, void* method)
 {
     if (ShouldRedirect(player)) {
@@ -123,7 +125,7 @@ void Uninstall()
     if (!s_installed) return;
     s_enabled.store(false, std::memory_order_release);
     if (g_swaTarget) { MH_DisableHook(g_swaTarget); MH_RemoveHook(g_swaTarget); }
-    g_swaOrig = nullptr;
+    g_swaOrig   = nullptr;
     g_swaTarget = nullptr;
     s_installed = false;
 }

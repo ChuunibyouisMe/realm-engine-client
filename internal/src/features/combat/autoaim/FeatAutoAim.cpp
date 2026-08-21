@@ -3,276 +3,81 @@
 #include "AutoAim.h"
 #include "ProjNoclip.h"
 #include "FeatureState.h"
-#include "GameState.h"
-#include "RuntimeOffsets.h"
 #include "core/config/settings.h"
 #include "core/config/keybinds.h"
-#include "gui/tabs/CameraTAB.h"
-#include "game/math/W2S.h"
-#include "platform/hooks/DirectX.h"
-
 #include <imgui/imgui.h>
-#include <windows.h>
-#include <shlobj.h>
-#include <cmath>
 #include <cstdio>
 #include <cstdlib>
-#include <cstring>
-#include <vector>
 
 namespace CombatTAB {
 namespace FeatAutoAim {
 
 static bool  s_aimEnabled          = false;
-static int   s_aimMode             = 1; // 0 = Distance, 1 = Cursor, 2 = Health
-static bool  s_targetInvulnerable  = true;
-static bool  s_predictiveAim       = true;
-static float s_predictiveLead      = 1.0f;
-static bool  s_magnetAim           = true;
-static bool  s_magnetRangeExt      = true;
-static float s_magnetAimRange      = 1.8f;
-static bool  s_renderMagnetRange   = true;
-static bool  s_renderNormalAimRange = true;
+static int   s_aimMode             = 0;
 static bool  s_noclipEnabled       = false;
-static bool  s_renderAimInfo       = true;
+static bool  s_shootInvulnerable   = false;
+static bool  s_prioritizeBosses    = false;
+static bool  s_ignoreWalls         = true;
+static bool  s_reverseCultStaff    = true;
+static bool  s_offsetColossusSword = false;
+static bool  s_shootWhileStealthed = true;
+static bool  s_mouseBoundingOn     = true;
+static float s_mouseBoundingRange  = 2.f;
+static float s_rangeLeadBias       = 1.f;
 static bool  s_capturingKey        = false;
 
-namespace {
-    char s_cfgPath[MAX_PATH]{};
-
-    const char* GetConfigPath() {
-        if (!s_cfgPath[0]) {
-            if (SUCCEEDED(SHGetFolderPathA(nullptr, CSIDL_PERSONAL, nullptr,
-                                          SHGFP_TYPE_CURRENT, s_cfgPath))) {
-                std::strncat(s_cfgPath, "\\realm_engine_aim.cfg", MAX_PATH - std::strlen(s_cfgPath) - 1);
-            } else {
-                GetModuleFileNameA(nullptr, s_cfgPath, MAX_PATH);
-                char* slash = std::strrchr(s_cfgPath, '\\');
-                if (slash) slash[1] = '\0';
-                std::strncat(s_cfgPath, "realm_engine_aim.cfg", MAX_PATH - std::strlen(s_cfgPath) - 1);
-            }
-        }
-        return s_cfgPath;
-    }
-
-    int ReadInt(const char* key, int defaultValue) {
-        return GetPrivateProfileIntA("AutoAim", key, defaultValue, GetConfigPath());
-    }
-
-    float ReadFloat(const char* key, float defaultValue) {
-        char fallback[32], text[64];
-        std::snprintf(fallback, sizeof(fallback), "%.9g", defaultValue);
-        GetPrivateProfileStringA("AutoAim", key, fallback, text, sizeof(text), GetConfigPath());
-        char* end = nullptr;
-        const float parsed = std::strtof(text, &end);
-        return (end && end != text) ? parsed : defaultValue;
-    }
-
-    void WriteInt(const char* key, int value) {
-        char text[32];
-        std::snprintf(text, sizeof(text), "%d", value);
-        WritePrivateProfileStringA("AutoAim", key, text, GetConfigPath());
-    }
-
-    void WriteFloat(const char* key, float value) {
-        char text[32];
-        std::snprintf(text, sizeof(text), "%.9g", value);
-        WritePrivateProfileStringA("AutoAim", key, text, GetConfigPath());
-    }
-
-    void SaveConfig() {
-        WriteInt("toggleKey", settings.KeyBinds.Toggle_AutoAim);
-        WriteInt("autoAim", s_aimEnabled ? 1 : 0);
-        WriteInt("targetInvulnerable", s_targetInvulnerable ? 1 : 0);
-        WriteInt("predictiveAim", s_predictiveAim ? 1 : 0);
-        WriteFloat("predictiveLead", s_predictiveLead);
-        WriteInt("targetingStyle", s_aimMode);
-        WriteInt("magnetAim", s_magnetAim ? 1 : 0);
-        WriteInt("magnetRangeExt", s_magnetRangeExt ? 1 : 0);
-        WriteFloat("magnetAimRange", s_magnetAimRange);
-        WriteInt("renderMagnetRange", s_renderMagnetRange ? 1 : 0);
-        WriteInt("renderNormalAimRange", s_renderNormalAimRange ? 1 : 0);
-        WriteInt("projectileNoClip", s_noclipEnabled ? 1 : 0);
-        WriteInt("renderAimInfo", s_renderAimInfo ? 1 : 0);
-    }
-
-    bool s_configLoaded = false;
-    void LoadConfig() {
-        if (s_configLoaded) return;
-        s_configLoaded = true;
-
-        settings.KeyBinds.Toggle_AutoAim = static_cast<uint8_t>(ReadInt("toggleKey", settings.KeyBinds.Toggle_AutoAim));
-        s_aimEnabled = ReadInt("autoAim", 0) != 0;
-        s_targetInvulnerable = ReadInt("targetInvulnerable", 1) != 0;
-        s_predictiveAim = ReadInt("predictiveAim", 1) != 0;
-        s_predictiveLead = ReadFloat("predictiveLead", 1.0f);
-        s_aimMode = ReadInt("targetingStyle", 1);
-        s_magnetAim = ReadInt("magnetAim", 1) != 0;
-        s_magnetRangeExt = ReadInt("magnetRangeExt", 1) != 0;
-        s_magnetAimRange = ReadFloat("magnetAimRange", 1.8f);
-        s_renderMagnetRange = ReadInt("renderMagnetRange", 1) != 0;
-        s_renderNormalAimRange = ReadInt("renderNormalAimRange", 1) != 0;
-        s_noclipEnabled = ReadInt("projectileNoClip", 0) != 0;
-        s_renderAimInfo = ReadInt("renderAimInfo", 1) != 0;
-
-        FeatureState::SetAutoAimEnabled(s_aimEnabled);
-        AutoAim::SetEnabled(s_aimEnabled);
-        AutoAim::SetShootInvulnerable(s_targetInvulnerable);
-        AutoAim::SetPredictiveAim(s_predictiveAim);
-        AutoAim::SetPredictiveLead(s_predictiveLead);
-        AutoAim::SetMagnetAim(s_magnetAim);
-        AutoAim::SetMagnetRangeExt(s_magnetRangeExt);
-        AutoAim::SetMagnetAimRange(s_magnetAimRange);
-        AutoAim::SetRenderMagnetRange(s_renderMagnetRange);
-        AutoAim::SetRenderNormalAimRange(s_renderNormalAimRange);
-        AutoAim::SetRenderAimInfo(s_renderAimInfo);
-        ProjNoclip::SetEnabled(s_noclipEnabled);
-
-        TargetSelector::Mode resolved = TargetSelector::Mode::ClosestToMouse;
-        if (s_aimMode == 0) resolved = TargetSelector::Mode::ClosestToPlayer;
-        else if (s_aimMode == 1) resolved = TargetSelector::Mode::ClosestToMouse;
-        else if (s_aimMode == 2) resolved = TargetSelector::Mode::HighestHP;
-        FeatureState::SetAutoAimMode(s_aimMode == 0 ? 0 : (s_aimMode == 2 ? 1 : 2));
-        AutoAim::SetAimMode(resolved);
-    }
-}
-
-static bool DrawRangeCircle(float centerX, float centerY, float radius,
-                            ImU32 fill, ImU32 shadow, ImU32 outline)
-{
-    if (radius <= 0.05f) return false;
-    float angleDeg = CameraTAB::GetAngle();
-    float ortho    = CameraTAB::GetZoom();
-    if (ortho == 0.f) ortho = 8.f;
-    const float angleRad = angleDeg * (3.1415926535f / 180.f);
-
-    HWND wnd = DirectX::window;
-    if (!wnd) return false;
-    RECT r;
-    GetClientRect(wnd, &r);
-    const float screenW = static_cast<float>(r.right - r.left);
-    const float screenH = static_cast<float>(r.bottom - r.top);
-    if (screenW <= 0.f || screenH <= 0.f) return false;
-
-    float cx = screenW * 0.5f;
-    float cy = screenH * 0.5f;
-    float zoom = screenH / (2.f * ortho);
-
-    const float prX = CameraTAB::GetPixelRectX();
-    const float prY = CameraTAB::GetPixelRectY();
-    const float prW = CameraTAB::GetPixelRectW();
-    const float prH = CameraTAB::GetPixelRectH();
-    if (prW > 16.f && prH > 16.f) {
-        cx = prX + prW * 0.5f;
-        cy = screenH - (prY + prH * 0.5f);
-        zoom = prH / (2.f * ortho);
-    }
-
-    constexpr int kSegments = 96;
-    constexpr float kTwoPi = 6.28318530718f;
-    std::vector<ImVec2> points;
-    points.reserve(kSegments);
-    for (int i = 0; i < kSegments; ++i) {
-        const float angle = kTwoPi * static_cast<float>(i) / static_cast<float>(kSegments);
-        const float wx = centerX + cosf(angle) * radius;
-        const float wy = centerY + sinf(angle) * radius;
-        float sx = 0.f, sy = 0.f;
-        if (!W2S(wx, wy, sx, sy, centerX, centerY, angleRad, zoom, cx, cy))
-            return false;
-        points.emplace_back(sx, sy);
-    }
-
-    ImDrawList* draw = ImGui::GetBackgroundDrawList();
-    if ((fill & IM_COL32_A_MASK) != 0)
-        draw->AddConvexPolyFilled(points.data(), static_cast<int>(points.size()), fill);
-    draw->AddPolyline(points.data(), static_cast<int>(points.size()), shadow, ImDrawFlags_Closed, 3.0f);
-    draw->AddPolyline(points.data(), static_cast<int>(points.size()), outline, ImDrawFlags_Closed, 1.35f);
-    return true;
-}
-
-static void DrawAimRanges()
-{
-    if (!ImGui::GetCurrentContext()) return;
-    const bool showMagnet = s_renderMagnetRange && s_magnetAim;
-    const bool showNormal = s_renderNormalAimRange && s_aimEnabled;
-    if (!showMagnet && !showNormal) return;
-
-    void* local = GameState::GetLocalPtr();
-    if (!local) return;
-    float px = 0.f, py = 0.f;
-    __try {
-        uint8_t* lp = reinterpret_cast<uint8_t*>(local);
-        px = *reinterpret_cast<float*>(lp + RuntimeOffsets::PosX);
-        py = *reinterpret_cast<float*>(lp + RuntimeOffsets::PosY);
-    } __except (EXCEPTION_EXECUTE_HANDLER) { return; }
-
-    if (showNormal) {
-        const WeaponProfile& wp = AutoAim::GetWeaponProfile();
-        float normalRadius = wp.rangeTiles > 0.1f ? wp.rangeTiles : 15.f;
-        DrawRangeCircle(px, py, normalRadius,
-                        IM_COL32(76, 181, 225, 8),
-                        IM_COL32(5, 18, 24, 175),
-                        IM_COL32(92, 203, 245, 205));
-    }
-
-    if (showMagnet) {
-        DrawRangeCircle(px, py, s_magnetAimRange,
-                        IM_COL32(139, 117, 230, 15),
-                        IM_COL32(17, 13, 31, 180),
-                        IM_COL32(164, 146, 244, 220));
-    }
-}
+// Phase-skip list — editable in the UI; stored as a fixed-capacity array of raw ints.
+static constexpr int kMaxSkipTypes = 16;
+static int32_t s_skipTypes[kMaxSkipTypes] = {};
+static int     s_skipCount = 0;
+static char    s_skipInputBuf[32] = {};
 
 void Tick(bool /*menuOpen*/)
 {
-    LoadConfig();
-
-    static bool s_wasDown = false;
-    const bool isDown = settings.KeyBinds.Toggle_AutoAim != 0 && KeyBinds::IsKeyPressed(settings.KeyBinds.Toggle_AutoAim) && !s_capturingKey;
-    if (isDown && !s_wasDown) {
-        s_magnetAim = !s_magnetAim;
-        AutoAim::SetMagnetAim(s_magnetAim);
-        SaveConfig();
+    static bool s_wasKeyDown = false;
+    const bool isKeyDown = (settings.KeyBinds.Toggle_AutoAim != 0) &&
+                           KeyBinds::IsKeyPressed(settings.KeyBinds.Toggle_AutoAim) &&
+                           !s_capturingKey;
+    if (isKeyDown && !s_wasKeyDown) {
+        s_aimEnabled = !s_aimEnabled;
+        FeatureState::SetAutoAimEnabled(s_aimEnabled);
+    } else {
+        s_aimEnabled   = FeatureState::GetAutoAimEnabled();
     }
-    s_wasDown = isDown;
+    s_wasKeyDown   = isKeyDown;
+    s_aimMode      = FeatureState::GetAutoAimMode();
+    s_noclipEnabled = ProjNoclip::IsEnabled();
 
-    s_aimEnabled           = AutoAim::IsEnabled();
-    s_targetInvulnerable   = AutoAim::IsShootInvulnerable();
-    s_predictiveAim        = AutoAim::IsPredictiveAim();
-    s_predictiveLead       = AutoAim::GetPredictiveLead();
-    s_magnetAim            = AutoAim::IsMagnetAim();
-    s_magnetRangeExt       = AutoAim::IsMagnetRangeExt();
-    s_magnetAimRange       = AutoAim::GetMagnetAimRange();
-    s_renderMagnetRange    = AutoAim::IsRenderMagnetRange();
-    s_renderNormalAimRange = AutoAim::IsRenderNormalAimRange();
-    s_renderAimInfo        = AutoAim::IsRenderAimInfo();
-    s_noclipEnabled        = ProjNoclip::IsEnabled();
-
-    // Map internal Mode to UI style (0=Distance, 1=Cursor, 2=Health)
-    const TargetSelector::Mode mode = AutoAim::GetAimMode();
-    if (mode == TargetSelector::Mode::ClosestToPlayer) s_aimMode = 0;
-    else if (mode == TargetSelector::Mode::ClosestToMouse) s_aimMode = 1;
-    else if (mode == TargetSelector::Mode::HighestHP) s_aimMode = 2;
+    s_shootInvulnerable   = AutoAim::IsShootInvulnerable();
+    s_prioritizeBosses    = AutoAim::IsPrioritizeBosses();
+    s_ignoreWalls         = AutoAim::IsIgnoreWalls();
+    s_reverseCultStaff    = AutoAim::IsReverseCultStaff();
+    s_offsetColossusSword = AutoAim::IsOffsetColossusSword();
+    s_shootWhileStealthed = AutoAim::IsShootWhileStealthed();
+    s_mouseBoundingOn     = AutoAim::IsMouseBoundingEnabled();
+    s_mouseBoundingRange  = AutoAim::GetMouseBoundingRange();
+    s_rangeLeadBias       = AutoAim::GetRangeLeadBias();
 
     if (!ProjNoclip::IsInstalled())
         ProjNoclip::Install();
-
-    DrawAimRanges();
 }
 
 void Render()
 {
-    ImGui::TextUnformatted("Auto Aim Settings");
-    ImGui::Separator();
+    ImGui::TextColored(ImVec4(0.5f, 0.95f, 0.65f, 1.f), "AUTO AIM");
+    ImGui::Spacing();
 
-    // Hotkey Widget
-    char keyBtnLabel[64];
+    if (ImGui::Checkbox("Enable##aaEnable", &s_aimEnabled))
+        FeatureState::SetAutoAimEnabled(s_aimEnabled);
+
+    ImGui::SameLine();
+    char keyBtnLabel[48];
     if (s_capturingKey) {
-        snprintf(keyBtnLabel, sizeof(keyBtnLabel), "[ Press Key ]##aimbotHotkey");
+        snprintf(keyBtnLabel, sizeof(keyBtnLabel), "[ Press Key ]##aaKey");
     } else if (settings.KeyBinds.Toggle_AutoAim != 0) {
-        snprintf(keyBtnLabel, sizeof(keyBtnLabel), "Magnet Aim Toggle: [ %s ]##aimbotHotkey", KeyBinds::ToString(settings.KeyBinds.Toggle_AutoAim));
+        snprintf(keyBtnLabel, sizeof(keyBtnLabel), "[ Key: %s ]##aaKey", KeyBinds::ToString(settings.KeyBinds.Toggle_AutoAim));
     } else {
-        snprintf(keyBtnLabel, sizeof(keyBtnLabel), "Magnet Aim Toggle: [ None ]##aimbotHotkey");
+        snprintf(keyBtnLabel, sizeof(keyBtnLabel), "[ Key: None ]##aaKey");
     }
 
     ImGui::PushStyleColor(ImGuiCol_Button, s_capturingKey ? ImVec4(0.5f, 0.2f, 0.2f, 1.0f) : ImVec4(0.2f, 0.25f, 0.3f, 0.85f));
@@ -290,105 +95,188 @@ void Render()
                     settings.KeyBinds.Toggle_AutoAim = k;
                 }
                 s_capturingKey = false;
-                SaveConfig();
                 break;
             }
         }
     }
 
-    if (ImGui::Checkbox("Auto Aim  ##claudebawtAutoAim", &s_aimEnabled)) {
-        FeatureState::SetAutoAimEnabled(s_aimEnabled);
-        AutoAim::SetEnabled(s_aimEnabled);
-        SaveConfig();
-    }
+    ImGui::Spacing();
+    ImGui::TextDisabled("Aim mode");
 
-    if (ImGui::Checkbox("Target Invulnerable Enemies##claudebawtTargetInvuln", &s_targetInvulnerable)) {
-        AutoAim::SetShootInvulnerable(s_targetInvulnerable);
-        SaveConfig();
+    if (ImGui::RadioButton("Closest to player##aaMode0", s_aimMode == 0)) {
+        s_aimMode = 0; FeatureState::SetAutoAimMode(0);
+        AutoAim::SetAimMode(TargetSelector::Mode::ClosestToPlayer);
     }
-
-    if (ImGui::Checkbox("Predictive Aim (Lead Moving Enemies)##claudebawtPredictiveAim", &s_predictiveAim)) {
-        AutoAim::SetPredictiveAim(s_predictiveAim);
-        SaveConfig();
+    if (ImGui::RadioButton("Highest HP##aaMode1", s_aimMode == 1)) {
+        s_aimMode = 1; FeatureState::SetAutoAimMode(1);
+        AutoAim::SetAimMode(TargetSelector::Mode::HighestHP);
     }
-
-    if (s_predictiveAim) {
-        if (ImGui::SliderFloat("Lead Multiplier##claudebawtLeadMult", &s_predictiveLead, 0.25f, 2.0f, "%.2fx")) {
-            AutoAim::SetPredictiveLead(s_predictiveLead);
-            SaveConfig();
-        }
-        ImGui::TextDisabled("Calculates projectile travel time and target velocity to lead fast targets.");
+    if (ImGui::RadioButton("Closest to mouse##aaMode2", s_aimMode == 2)) {
+        s_aimMode = 2; FeatureState::SetAutoAimMode(2);
+        AutoAim::SetAimMode(TargetSelector::Mode::ClosestToMouse);
     }
-
-    static const char* styles[] = { "Distance", "Cursor", "Health" };
-    int uiStyle = (s_aimMode >= 0 && s_aimMode <= 2) ? s_aimMode : 1;
-    if (ImGui::Combo("Targeting Style##claudebawtTargetStyle", &uiStyle, styles, 3)) {
-        s_aimMode = uiStyle;
-        TargetSelector::Mode resolved = TargetSelector::Mode::ClosestToMouse;
-        if (uiStyle == 0) resolved = TargetSelector::Mode::ClosestToPlayer;
-        else if (uiStyle == 1) resolved = TargetSelector::Mode::ClosestToMouse;
-        else if (uiStyle == 2) resolved = TargetSelector::Mode::HighestHP;
-        FeatureState::SetAutoAimMode(uiStyle == 0 ? 0 : (uiStyle == 2 ? 1 : 2));
-        AutoAim::SetAimMode(resolved);
-        SaveConfig();
+    if (ImGui::RadioButton("Locked target##aaMode3", s_aimMode == 3)) {
+        s_aimMode = 3; FeatureState::SetAutoAimMode(3);
+        AutoAim::SetAimMode(TargetSelector::Mode::Locked);
     }
-
-    if (ImGui::Checkbox("Magnet Aim##claudebawtMagnetAim", &s_magnetAim)) {
-        AutoAim::SetMagnetAim(s_magnetAim);
-        SaveConfig();
-    }
-
-    if (ImGui::Checkbox("Magnet Aim Range Extension##claudebawtMagnetRangeExt", &s_magnetRangeExt)) {
-        AutoAim::SetMagnetRangeExt(s_magnetRangeExt);
-        SaveConfig();
-    }
-
-    if (ImGui::SliderFloat("Magnet Aim Range (Ctrl + Click to type)##claudebawtMagnetRange", &s_magnetAimRange, 1.0f, 2.25f, "%.3f")) {
-        AutoAim::SetMagnetAimRange(s_magnetAimRange);
-        SaveConfig();
-    }
-
-    if (ImGui::Checkbox("Show Magnet Aim Range Circle##claudebawtShowMagnetCircle", &s_renderMagnetRange)) {
-        AutoAim::SetRenderMagnetRange(s_renderMagnetRange);
-        SaveConfig();
-    }
-
-    if (ImGui::Checkbox("Show Normal Aim Range Circle##claudebawtShowNormalCircle", &s_renderNormalAimRange)) {
-        AutoAim::SetRenderNormalAimRange(s_renderNormalAimRange);
-        SaveConfig();
-    }
-    ImGui::TextDisabled("Normal range follows the equipped weapon's projectile reach.");
-
-    if (ImGui::Checkbox("Projectile No Clip##claudebawtProjNoclip", &s_noclipEnabled)) {
-        ProjNoclip::SetEnabled(s_noclipEnabled);
-        SaveConfig();
-    }
-
-    if (ImGui::Checkbox("Render Aim Info##claudebawtRenderAimInfo", &s_renderAimInfo)) {
-        AutoAim::SetRenderAimInfo(s_renderAimInfo);
-        SaveConfig();
-    }
-
-    if (s_renderAimInfo && s_aimEnabled) {
+    if (s_aimMode == 3) {
         ImGui::Indent();
-        if (AutoAim::HasTarget()) {
-            float tx = 0.f, ty = 0.f;
-            AutoAim::GetAimTarget(tx, ty);
-            ImGui::TextColored(ImVec4(0.4f, 1.f, 0.5f, 1.f), "Target: (%.2f, %.2f)  ID: %d",
-                               static_cast<double>(tx), static_cast<double>(ty),
-                               AutoAim::GetAimFocusEnemyId());
-        } else {
-            ImGui::TextDisabled("Target: None");
+        const int32_t lockedId = AutoAim::GetAimFocusEnemyId();
+        if (lockedId > 0)
+            ImGui::TextColored(ImVec4(0.4f, 1.f, 0.5f, 1.f), "Locked on id %d", lockedId);
+        else
+            ImGui::TextDisabled("No lock — aim at an enemy while in another mode first");
+        if (ImGui::Button("Lock current target##aaLock")) {
+            const int32_t cur = AutoAim::GetAimFocusEnemyId();
+            if (cur > 0) AutoAim::SetLockTarget(cur);
         }
-        const WeaponProfile& wp = AutoAim::GetWeaponProfile();
-        if (wp.speedRaw > 0.f || wp.lifetimeMs > 0.f) {
-            ImGui::TextDisabled("Proj: speed %.0f | lifetime %.0fms | reach %.2f tiles",
-                                static_cast<double>(wp.speedRaw),
-                                static_cast<double>(wp.lifetimeMs),
-                                static_cast<double>(wp.rangeTiles));
+        if (ImGui::Button("Clear lock##aaClearLock")) {
+            AutoAim::SetLockTarget(-1);
+            AutoAim::SetAimMode(TargetSelector::Mode::ClosestToPlayer);
+            s_aimMode = 0;
         }
         ImGui::Unindent();
     }
+
+    ImGui::Spacing();
+    ImGui::TextDisabled("Targeting filters");
+
+    if (ImGui::Checkbox("Shoot invulnerable##aaShootInv", &s_shootInvulnerable))
+        AutoAim::SetShootInvulnerable(s_shootInvulnerable);
+    ImGui::SameLine(); ImGui::TextDisabled("(?)");
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Aims at invulnerable enemies (XML <Invincible/>). They stay below\nregular enemies in priority so non-invuln targets are still picked first.");
+
+    if (ImGui::Checkbox("Prioritize bosses##aaBossOnly", &s_prioritizeBosses))
+        AutoAim::SetPrioritizeBosses(s_prioritizeBosses);
+    ImGui::SameLine(); ImGui::TextDisabled("(?)");
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Quest/boss targets are aimed at first. If no boss is in range,\nregular enemies become valid targets.");
+
+    if (ImGui::Checkbox("Ignore walls / no-HP-bar##aaIgnoreWalls", &s_ignoreWalls))
+        AutoAim::SetIgnoreWalls(s_ignoreWalls);
+    ImGui::SameLine(); ImGui::TextDisabled("(?)");
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Skip destructible walls and similar (ObjectProperties.noHealthBar).");
+
+    ImGui::Spacing();
+    ImGui::TextDisabled("Phase skip (e.g. O3 invulnerable phases)");
+    ImGui::TextWrapped("Object type IDs skipped regardless of invulnerability flags.");
+
+    for (int i = 0; i < s_skipCount; ++i) {
+        char lbl[32];
+        snprintf(lbl, sizeof(lbl), "%d##skip%d", s_skipTypes[i], i);
+        ImGui::Bullet(); ImGui::SameLine();
+        ImGui::Text("%d", s_skipTypes[i]); ImGui::SameLine();
+        snprintf(lbl, sizeof(lbl), "X##skipRm%d", i);
+        if (ImGui::SmallButton(lbl)) {
+            for (int j = i; j < s_skipCount - 1; ++j) s_skipTypes[j] = s_skipTypes[j + 1];
+            --s_skipCount;
+            AutoAim::SetPhaseSkipTypes(s_skipCount > 0 ? s_skipTypes : nullptr, s_skipCount);
+        }
+    }
+    if (s_skipCount < kMaxSkipTypes) {
+        ImGui::PushItemWidth(120.f);
+        ImGui::InputText("##skipInput", s_skipInputBuf, sizeof(s_skipInputBuf),
+                         ImGuiInputTextFlags_CharsDecimal);
+        ImGui::PopItemWidth();
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Add##skipAdd")) {
+            const int32_t v = static_cast<int32_t>(atoi(s_skipInputBuf));
+            if (v > 0) {
+                s_skipTypes[s_skipCount++] = v;
+                AutoAim::SetPhaseSkipTypes(s_skipTypes, s_skipCount);
+                s_skipInputBuf[0] = '\0';
+            }
+        }
+    }
+
+    ImGui::Spacing();
+    ImGui::TextDisabled("Weapon-specific");
+    if (ImGui::Checkbox("Reverse Cult Staff##aaRevCult", &s_reverseCultStaff))
+        AutoAim::SetReverseCultStaff(s_reverseCultStaff);
+    ImGui::SameLine(); ImGui::TextDisabled("(?)");
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Staff of Unholy Sacrifice: add 180\xc2\xb0 to aim (Cultist Fire Shot).");
+
+    if (ImGui::Checkbox("Offset Colossus Sword##aaColOff", &s_offsetColossusSword))
+        AutoAim::SetOffsetColossusSword(s_offsetColossusSword);
+    ImGui::SameLine(); ImGui::TextDisabled("(?)");
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Sword of the Colossus: reserved \xe2\x80\x94 exact offset not yet extracted.");
+
+    if (ImGui::Checkbox("Shoot while stealthed##aaStealthShoot", &s_shootWhileStealthed))
+        AutoAim::SetShootWhileStealthed(s_shootWhileStealthed);
+    ImGui::SameLine(); ImGui::TextDisabled("(?)");
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("When off, auto-aim does nothing while Invisible.");
+
+    ImGui::Spacing();
+    ImGui::TextDisabled("Mouse distance (closest-to-mouse)");
+    if (ImGui::Checkbox("Clamp search to mouse radius##aaMouseBound", &s_mouseBoundingOn))
+        AutoAim::SetMouseBoundingEnabled(s_mouseBoundingOn);
+    ImGui::BeginDisabled(!s_mouseBoundingOn || s_aimMode != 2);
+    ImGui::PushItemWidth(180.f);
+    if (ImGui::SliderFloat("Mouse radius (tiles)##aaMouseBoundR", &s_mouseBoundingRange, 1.f, 15.f, "%.2f"))
+        AutoAim::SetMouseBoundingRange(s_mouseBoundingRange);
+    ImGui::PopItemWidth();
+    ImGui::EndDisabled();
+
+    ImGui::Spacing();
+    ImGui::TextDisabled("Range lead bias");
+    ImGui::PushItemWidth(180.f);
+    if (ImGui::SliderFloat("Lead bias (tiles)##aaRangeLead", &s_rangeLeadBias, 0.f, 5.f, "%.2f"))
+        AutoAim::SetRangeLeadBias(s_rangeLeadBias);
+    ImGui::PopItemWidth();
+    ImGui::SameLine(); ImGui::TextDisabled("(?)");
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Extra tiles added to weapon range for aim decisions.\nStarts facing/leading enemies before your shots can connect.");
+
+    if (s_aimEnabled) {
+        ImGui::Indent();
+        ImGui::Spacing();
+        if (AutoAim::HasTarget()) {
+            float tx = 0.f, ty = 0.f;
+            AutoAim::GetAimTarget(tx, ty);
+            ImGui::TextColored(ImVec4(0.4f, 1.f, 0.5f, 1.f),
+                "Target: %.2f, %.2f  (id %d)",
+                static_cast<double>(tx), static_cast<double>(ty),
+                AutoAim::GetAimFocusEnemyId());
+        } else {
+            ImGui::TextDisabled("No target");
+        }
+        const WeaponProfile& wp = AutoAim::GetWeaponProfile();
+        if (wp.speedRaw > 0.f || wp.lifetimeMs > 0.f) {
+            ImGui::TextDisabled("Proj: speed %.0f  life %.0fms  range %.2f tiles",
+                static_cast<double>(wp.speedRaw),
+                static_cast<double>(wp.lifetimeMs),
+                static_cast<double>(wp.rangeTiles));
+        }
+        ImGui::Unindent();
+    }
+
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    ImGui::TextColored(ImVec4(0.5f, 0.95f, 0.65f, 1.f), "PROJECTILE NOCLIP");
+    ImGui::TextWrapped(
+        "Temporarily sets the current tile's collision layer to 37 when the "
+        "wall-check fires, causing projectiles to pass through walls. "
+        "Matches multitool WeaponModsProjectileNoclip behaviour exactly.");
+    ImGui::Spacing();
+
+    if (!ProjNoclip::IsInstalled())
+        ImGui::TextColored(ImVec4(1.f, 0.6f, 0.2f, 1.f),
+            "Hooks not installed \xe2\x80\x94 waiting for IL2CPP class resolution.");
+
+    if (ImGui::Checkbox("Enable proj noclip##pnEnable", &s_noclipEnabled))
+        ProjNoclip::SetEnabled(s_noclipEnabled);
+
+    if (ProjNoclip::IsInstalled() && ProjNoclip::IsEnabled())
+        ImGui::TextColored(ImVec4(0.4f, 1.f, 0.5f, 1.f), "Active");
+    else if (ProjNoclip::IsInstalled())
+        ImGui::TextDisabled("Inactive");
 }
 
 } // namespace FeatAutoAim

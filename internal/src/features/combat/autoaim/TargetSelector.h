@@ -13,18 +13,13 @@ enum class Mode : int {
 };
 
 struct Config {
-    Mode           mode                 = Mode::ClosestToMouse;
-    bool           shootInvulnerable    = true;
-    bool           prioritizeBosses     = false;
-    bool           ignoreWalls          = false;  // skip noHealthBar entities
-    float          rangeLeadBias        = 0.9f;  // extra tiles past weapon range
+    Mode           mode                 = Mode::ClosestToPlayer;
+    bool           shootInvulnerable    = false;
+    bool           prioritizeBosses     = true;
+    bool           ignoreWalls          = true;  // skip noHealthBar entities
+    float          rangeLeadBias        = 1.0f;  // extra tiles past weapon range
     bool           mouseBoundingEnabled = false;
-    float          mouseBoundingRange   = 2.5f;
-    bool           predictiveAim        = true;
-    float          predictiveLead       = 1.0f;
-    bool           magnetAim            = true;
-    bool           magnetRangeExt       = true;
-    float          magnetAimRange       = 1.8f;
+    float          mouseBoundingRange   = 8.0f;
     int32_t        lockedEnemyId        = -1;    // used when mode == Locked
     const int32_t* skipObjTypes         = nullptr; // optional phase-skip list
     int            skipObjCount         = 0;
