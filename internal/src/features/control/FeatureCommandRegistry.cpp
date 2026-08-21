@@ -101,6 +101,10 @@ namespace {
             FH_INT("autoAimMode", IpcBridge_SetAutoAimMode),
             FH_BOOL("autoAimPrioritizeBosses", AutoAim::SetPrioritizeBosses),
             FH_BOOL("autoAimIgnoreWalls", AutoAim::SetIgnoreWalls),
+            FH_BOOL("autoAimShootInvulnerable", AutoAim::SetShootInvulnerable),
+            FH_BOOL("autoAimShootWhileStealthed", AutoAim::SetShootWhileStealthed),
+            FH_FLOAT("autoAimMouseBoundingRange", AutoAim::SetMouseBoundingRange),
+            FH_FLOAT("autoAimRangeLeadBias", AutoAim::SetRangeLeadBias),
             FH("projectileNoclipEnabled", {
                 const bool on = f.Bool();
                 FeatureState::SetProjectileNoclipEnabled(on);

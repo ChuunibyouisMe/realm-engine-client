@@ -62,6 +62,44 @@ export function register(ctx: PluginContext) {
     sendDllFeature('autoAimIgnoreWalls', val);
   });
 
+  ctx.registerSetting('shootInvulnerable', {
+    label: 'Shoot invulnerable targets',
+    type: 'boolean',
+    value: false,
+  }, (val: boolean) => {
+    sendDllFeature('autoAimShootInvulnerable', val);
+  });
+
+  ctx.registerSetting('shootWhileStealthed', {
+    label: 'Shoot while invisible/stealthed',
+    type: 'boolean',
+    value: true,
+  }, (val: boolean) => {
+    sendDllFeature('autoAimShootWhileStealthed', val);
+  });
+
+  ctx.registerSetting('mouseBoundingRange', {
+    label: 'Mouse bounding range (tiles)',
+    type: 'number',
+    value: 8,
+    min: 1,
+    max: 30,
+    step: 0.5,
+  }, (val: number) => {
+    sendDllFeature('autoAimMouseBoundingRange', Number(val) || 8);
+  });
+
+  ctx.registerSetting('rangeLeadBias', {
+    label: 'Range lead bias (tiles)',
+    type: 'number',
+    value: 1,
+    min: 0,
+    max: 5,
+    step: 0.1,
+  }, (val: number) => {
+    sendDllFeature('autoAimRangeLeadBias', Number(val) || 1);
+  });
+
   ctx.registerSetting('projectileNoclip', {
     label: 'Projectile noclip',
     type: 'boolean',
@@ -125,8 +163,12 @@ export function register(ctx: PluginContext) {
   });
 
   function syncFilterState() {
-    sendDllFeature('autoAimPrioritizeBosses', ctx.getSetting<boolean>('prioritizeBosses'));
-    sendDllFeature('autoAimIgnoreWalls', ctx.getSetting<boolean>('ignoreWalls'));
+    sendDllFeature('autoAimPrioritizeBosses', ctx.getSetting<boolean>('prioritizeBosses') ?? false);
+    sendDllFeature('autoAimIgnoreWalls', ctx.getSetting<boolean>('ignoreWalls') ?? true);
+    sendDllFeature('autoAimShootInvulnerable', ctx.getSetting<boolean>('shootInvulnerable') ?? false);
+    sendDllFeature('autoAimShootWhileStealthed', ctx.getSetting<boolean>('shootWhileStealthed') ?? true);
+    sendDllFeature('autoAimMouseBoundingRange', Number(ctx.getSetting<number>('mouseBoundingRange')) || 8);
+    sendDllFeature('autoAimRangeLeadBias', Number(ctx.getSetting<number>('rangeLeadBias')) || 1);
   }
 
   ctx.on('clientConnected', () => {
