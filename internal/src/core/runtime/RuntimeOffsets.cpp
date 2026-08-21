@@ -686,7 +686,8 @@ bool MapObjectConditionsMakeUntargetable(uint32_t word0, uint32_t word1)
     // Confirmed from Flash client source: condition_ (COHCKAPOLCA UInt32[2]) is shared by ALL
     // GameObjects — players AND enemies receive CONDITION_STAT / NEW_CON_STAT from the server.
     const uint64_t full = GetFullConditions(word0, word1);
-    return HasCondition(full, ConditionEffects::Stasis)       // bit 21 — frozen + immune
+    return HasCondition(full, ConditionEffects::Dead)         // bit 0 — dead / corpse
+        || HasCondition(full, ConditionEffects::Stasis)       // bit 21 — frozen + immune
         || HasCondition(full, ConditionEffects::Invincible)   // bit 23 — temporary hit immunity
         || HasCondition(full, ConditionEffects::Invulnerable);// bit 24 — permanent immunity
 }
