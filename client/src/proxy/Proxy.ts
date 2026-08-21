@@ -247,11 +247,19 @@ export class Proxy extends EventEmitter {
     });
   }
 
+  public lastKnownServerIp: string = Proxy.DEFAULT_SERVER;
+
   /** Read the original server IP from the legacy shared temp file across all temp directories (fallback). */
   readOriginalTarget(): string {
     for (const d of this.getTargetDirectories()) {
       const ip = this.readTargetFile(join(d, 'rotmg_proxy_target.txt'));
-      if (ip) return ip;
+      if (ip) {
+        this.lastKnownServerIp = ip;
+        return ip;
+      }
+    }
+    if (this.lastKnownServerIp && this.lastKnownServerIp !== Proxy.DEFAULT_SERVER) {
+      return this.lastKnownServerIp;
     }
     Logger.warn('Proxy', `No DLL target found in any temp directories, using default: ${Proxy.DEFAULT_SERVER}`);
     return Proxy.DEFAULT_SERVER;
@@ -262,6 +270,9 @@ export class Proxy extends EventEmitter {
     const client = new ClientConnection(this, socket);
     client.clientId = generateClientId();
     client.originalTargetIp = this.readOriginalTargetForSocket(socket);
+    if (client.originalTargetIp && client.originalTargetIp !== '127.0.0.1') {
+      this.lastKnownServerIp = client.originalTargetIp;
+    }
     this.emit('clientBeginConnect', client);
   }
 
@@ -286,7 +297,7 @@ export class Proxy extends EventEmitter {
               const pidFile = join(d, `${TARGET_FILE_PREFIX}${pid}.txt`);
               const ip = this.readTargetFile(pidFile);
               if (ip) {
-                try { unlinkSync(pidFile); } catch {}
+                this.lastKnownServerIp = ip;
                 return ip;
               }
             }
@@ -303,7 +314,7 @@ export class Proxy extends EventEmitter {
                 const targetFile = join(d, f);
                 const ip = this.readTargetFile(targetFile);
                 if (ip) {
-                  try { unlinkSync(targetFile); } catch {}
+                  this.lastKnownServerIp = ip;
                   return ip;
                 }
               }

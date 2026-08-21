@@ -107,12 +107,15 @@ export class ReconnectHandler {
     Logger.debug('reconnect', 'Reconnect', `[HELLO] State lookup — conTargetAddress: ${client.state.conTargetAddress}, conTargetPort: ${client.state.conTargetPort}`);
     Logger.debug('reconnect', 'Reconnect', `[HELLO] State lookup — conRealKey (${client.state.conRealKey.length} bytes): ${client.state.conRealKey.toString('hex').slice(0, 80)}`);
 
-    // For the first connection (no prior RECONNECT), use the IP from the DLL hook
-    // But ignore 127.0.0.1 — that's our own proxy address from rewritten RECONNECTs
+    // For fresh connections or character changes without prior RECONNECT:
     if (client.originalTargetIp && client.originalTargetIp !== '127.0.0.1' &&
-        client.state.conTargetAddress === '54.241.208.233') {
+        (client.state.conTargetAddress === '54.241.208.233' || !client.state.conTargetAddress)) {
       Logger.debug('reconnect', 'Reconnect', `[HELLO] Overriding default server with DLL target: ${client.originalTargetIp}`);
       client.state.conTargetAddress = client.originalTargetIp;
+    } else if (this.proxy.lastKnownServerIp && this.proxy.lastKnownServerIp !== '54.241.208.233' &&
+               client.state.conTargetAddress === '54.241.208.233') {
+      Logger.debug('reconnect', 'Reconnect', `[HELLO] Overriding default server with last known server: ${this.proxy.lastKnownServerIp}`);
+      client.state.conTargetAddress = this.proxy.lastKnownServerIp;
     }
 
     // Restore the key from the previous RECONNECT (or clear it for fresh connections).

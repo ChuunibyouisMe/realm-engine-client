@@ -63,7 +63,10 @@ static int WSAAPI HookedConnect(SOCKET s, const sockaddr* name, int namelen) {
         if (in4->sin_port == htons(kGamePort)) {
             char ip[INET_ADDRSTRLEN] = {0};
             if (inet_ntop(AF_INET, &in4->sin_addr, ip, sizeof(ip)) != nullptr) {
-                DBG_FILE_LOG("[ConnectHook] Port 2050 connection detected to " << ip << ":2050 (passthrough test)");
+                if (std::strcmp(ip, "127.0.0.1") != 0) {
+                    RecordOriginalTarget(ip);
+                    DBG_FILE_LOG("[ConnectHook] Recorded real target IP: " << ip << ":2050");
+                }
             }
         }
     }
