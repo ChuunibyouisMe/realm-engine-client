@@ -48,11 +48,24 @@ sync_all_directories() {
         done
     done
 
+    # Search Steam common game installation folders
+    for common_dir in "$HOME/.local/share/Steam/steamapps/common"/* "/run/media"/*/*/"SteamLibrary/steamapps/common"/* "$HOME/.var/app/com.valvesoftware.Steam/data/Steam/steamapps/common"/*; do
+        if [[ "$common_dir" == *"Realm"* ]] || [[ "$common_dir" == *"RotMG"* ]]; then
+            install_hook_dlls "$common_dir"
+            if [ -d "$common_dir/Production" ]; then
+                install_hook_dlls "$common_dir/Production"
+            fi
+        fi
+    done
+
     # If passed an explicit executable path in arguments
     for arg in "$@"; do
         if [[ "$arg" == *"RotMG"* ]] || [[ "$arg" == *"Production"* ]] || [[ "$arg" == *"Realm"* ]]; then
             local dir_arg="$(dirname "$arg")"
             install_hook_dlls "$dir_arg"
+            if [ -d "$dir_arg/Production" ]; then
+                install_hook_dlls "$dir_arg/Production"
+            fi
         fi
     done
 }

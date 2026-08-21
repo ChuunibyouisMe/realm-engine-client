@@ -106,6 +106,18 @@ DWORD WINAPI Load(LPVOID lpParam) {
  }
  DBG_FILE_LOG("[Load] version.dll proxy lib loaded.");
 
+ // Filter out non-game processes (Launcher, CrashHandler, etc.)
+ std::string pathStr(exePath);
+ for (char& c : pathStr) c = (char)tolower(c);
+
+ if (pathStr.find("launcher") != std::string::npos ||
+     pathStr.find("unitycrashhandler") != std::string::npos ||
+     pathStr.find("crash") != std::string::npos ||
+     pathStr.find("bugreport") != std::string::npos) {
+  DBG_FILE_LOG("[Load] Non-game process detected (" << exePath << ") — skipping hook injection.");
+  return 0;
+ }
+
  // Poll for GameAssembly.dll (up to 60s). If it never loads, we're in a process
  // that doesn't host IL2CPP (e.g. UnityCrashHandler64.exe) — exit quietly so
  // Run() doesn't call NULL il2cpp function pointers and crash the process.
