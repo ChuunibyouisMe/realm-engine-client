@@ -37,7 +37,13 @@ namespace {
     {
         static int s_lastEnabled = -1, s_lastMode = -1;
         const int enabled = FeatureState::GetAutoAimEnabled() ? 1 : 0;
-        if (enabled != s_lastEnabled) { s_lastEnabled = enabled; AutoAim::SetEnabled(enabled != 0); }
+        if (enabled != s_lastEnabled) {
+            if (s_lastEnabled != -1) {
+                FloatingTextService::QueuePluginText(enabled != 0 ? "Auto Aim: Enabled" : "Auto Aim: Disabled");
+            }
+            s_lastEnabled = enabled;
+            AutoAim::SetEnabled(enabled != 0);
+        }
         const int aimMode = FeatureState::GetAutoAimMode();
         if (aimMode != s_lastMode) {
             s_lastMode = aimMode;
