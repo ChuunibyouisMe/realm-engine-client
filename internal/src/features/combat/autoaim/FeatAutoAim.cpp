@@ -102,18 +102,18 @@ namespace {
         s_configLoaded = true;
 
         settings.KeyBinds.Toggle_AutoAim = static_cast<uint8_t>(ReadInt("toggleKey", settings.KeyBinds.Toggle_AutoAim));
-        s_aimEnabled = ReadInt("autoAim", s_aimEnabled ? 1 : 0) != 0;
-        s_targetInvulnerable = ReadInt("targetInvulnerable", s_targetInvulnerable ? 1 : 0) != 0;
-        s_predictiveAim = ReadInt("predictiveAim", s_predictiveAim ? 1 : 0) != 0;
-        s_predictiveLead = ReadFloat("predictiveLead", s_predictiveLead);
-        s_aimMode = ReadInt("targetingStyle", s_aimMode);
-        s_magnetAim = ReadInt("magnetAim", s_magnetAim ? 1 : 0) != 0;
-        s_magnetRangeExt = ReadInt("magnetRangeExt", s_magnetRangeExt ? 1 : 0) != 0;
-        s_magnetAimRange = ReadFloat("magnetAimRange", s_magnetAimRange);
-        s_renderMagnetRange = ReadInt("renderMagnetRange", s_renderMagnetRange ? 1 : 0) != 0;
-        s_renderNormalAimRange = ReadInt("renderNormalAimRange", s_renderNormalAimRange ? 1 : 0) != 0;
-        s_noclipEnabled = ReadInt("projectileNoClip", s_noclipEnabled ? 1 : 0) != 0;
-        s_renderAimInfo = ReadInt("renderAimInfo", s_renderAimInfo ? 1 : 0) != 0;
+        s_aimEnabled = ReadInt("autoAim", 0) != 0;
+        s_targetInvulnerable = ReadInt("targetInvulnerable", 1) != 0;
+        s_predictiveAim = ReadInt("predictiveAim", 1) != 0;
+        s_predictiveLead = ReadFloat("predictiveLead", 1.0f);
+        s_aimMode = ReadInt("targetingStyle", 1);
+        s_magnetAim = ReadInt("magnetAim", 1) != 0;
+        s_magnetRangeExt = ReadInt("magnetRangeExt", 1) != 0;
+        s_magnetAimRange = ReadFloat("magnetAimRange", 1.8f);
+        s_renderMagnetRange = ReadInt("renderMagnetRange", 1) != 0;
+        s_renderNormalAimRange = ReadInt("renderNormalAimRange", 1) != 0;
+        s_noclipEnabled = ReadInt("projectileNoClip", 0) != 0;
+        s_renderAimInfo = ReadInt("renderAimInfo", 1) != 0;
 
         FeatureState::SetAutoAimEnabled(s_aimEnabled);
         AutoAim::SetEnabled(s_aimEnabled);
@@ -227,15 +227,16 @@ void Tick(bool /*menuOpen*/)
 {
     LoadConfig();
 
-    if (settings.KeyBinds.Toggle_AutoAim != 0 && KeyBinds::IsKeyPressed(settings.KeyBinds.Toggle_AutoAim) && !s_capturingKey) {
-        s_aimEnabled = !s_aimEnabled;
-        FeatureState::SetAutoAimEnabled(s_aimEnabled);
-        AutoAim::SetEnabled(s_aimEnabled);
+    static bool s_wasDown = false;
+    const bool isDown = settings.KeyBinds.Toggle_AutoAim != 0 && KeyBinds::IsKeyPressed(settings.KeyBinds.Toggle_AutoAim) && !s_capturingKey;
+    if (isDown && !s_wasDown) {
+        s_magnetAim = !s_magnetAim;
+        AutoAim::SetMagnetAim(s_magnetAim);
         SaveConfig();
-    } else {
-        s_aimEnabled = FeatureState::GetAutoAimEnabled();
     }
+    s_wasDown = isDown;
 
+    s_aimEnabled           = AutoAim::IsEnabled();
     s_targetInvulnerable   = AutoAim::IsShootInvulnerable();
     s_predictiveAim        = AutoAim::IsPredictiveAim();
     s_predictiveLead       = AutoAim::GetPredictiveLead();

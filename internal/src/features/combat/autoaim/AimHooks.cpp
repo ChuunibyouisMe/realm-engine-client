@@ -68,7 +68,6 @@ static float ApplyWeaponTweaks(float angle)
 
 static bool ShouldRedirect(void* player)
 {
-    if (!s_enabled.load(std::memory_order_relaxed)) return false;
     if (!s_hasTarget.load(std::memory_order_relaxed)) return false;
     if (!AddrOk(player)) return false;
     void* local = GameState::GetLocalPtr();
