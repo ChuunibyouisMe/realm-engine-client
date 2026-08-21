@@ -46,14 +46,26 @@ done
 if ! pgrep -f "tsx src/index.ts" > /dev/null && ! pgrep -f "dist/app.cjs" > /dev/null; then
     echo "[Steam Launcher] Starting Realm Engine Proxy & Dashboard..."
     (cd "$CLIENT_DIR" && npm start -- --dev > /tmp/realm-engine.log 2>&1) &
-    
-    # Wait a moment for DevServer to spin up on port 4440
-    sleep 2
 fi
 
-# 4. Configure DLL overrides for Proton / Wine so winhttp.dll and version.dll are loaded
+# 4. Auto-open the WebUI dashboard in browser as soon as the server is ready
+(
+    for i in {1..30}; do
+        if curl -s -o /dev/null http://localhost:4440 2>/dev/null; then
+            break
+        fi
+        sleep 0.5
+    done
+    if command -v xdg-open > /dev/null 2>&1; then
+        xdg-open "http://localhost:4440" > /dev/null 2>&1 || true
+    elif command -v python3 > /dev/null 2>&1; then
+        python3 -m webbrowser "http://localhost:4440" > /dev/null 2>&1 || true
+    fi
+) &
+
+# 5. Configure DLL overrides for Proton / Wine so winhttp.dll and version.dll are loaded
 export WINEDLLOVERRIDES="winhttp=n,b;version=n,b"
 export REALM_ENGINE_SKIP_WINHTTP_INSTALL=0
 
-# 5. Launch the actual game passed from Steam (%command%)
+# 6. Launch the actual game passed from Steam (%command%)
 exec "$@"
