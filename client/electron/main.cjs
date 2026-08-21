@@ -203,10 +203,10 @@ function setLoadingStatus(text, isError) {
 function createWindow() {
   const icon = resolveAppIcon();
   mainWindow = new BrowserWindow({
-    width: 1280,
-    height: 820,
-    minWidth: 900,
-    minHeight: 600,
+    width: 1120,
+    height: 680,
+    minWidth: 480,
+    minHeight: 380,
     title: APP_NAME,
     frame: false,
     backgroundColor: '#0d1117',

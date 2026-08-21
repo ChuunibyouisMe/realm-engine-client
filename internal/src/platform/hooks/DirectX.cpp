@@ -56,35 +56,12 @@ void DrawFpsOverlayTopCameraRect()
 	if (!fg)
 		return;
 
-	// Keep Unity pixelRect fresh even when Debug/Test overlays are idle (menu closed).
-	static float s_camRectRefreshAccum = 0.f;
-	s_camRectRefreshAccum += ImGui::GetIO().DeltaTime;
-	if (s_camRectRefreshAccum >= 0.2f) {
-		s_camRectRefreshAccum = 0.f;
-		CameraTAB::ForceRefresh();
-	}
+	UpdateCachedClientSize();
+	const float screenW = s_cachedScreenW > 0.f ? s_cachedScreenW : 1280.f;
+	const float screenH = s_cachedScreenH > 0.f ? s_cachedScreenH : 800.f;
 
-	if (!DirectX::window)
-		return;
-	const float screenW = s_cachedScreenW;
-	const float screenH = s_cachedScreenH;
-	if (screenW <= 0.f || screenH <= 0.f)
-		return;
-
-	const float prX = CameraTAB::GetPixelRectX();
-	const float prY = CameraTAB::GetPixelRectY();
-	const float prW = CameraTAB::GetPixelRectW();
-	const float prH = CameraTAB::GetPixelRectH();
-
-	float centerX;
-	float textY;
-	if (prW > 16.f && prH > 16.f) {
-		centerX = prX + prW * 0.5f;
-		textY = screenH - (prY + prH) + 6.f;
-	} else {
-		centerX = screenW * 0.5f;
-		textY = 6.f;
-	}
+	const float centerX = screenW * 0.5f;
+	const float textY = 6.f;
 
 	const float fps = ImGui::GetIO().Framerate;
 	char buf[48];
@@ -184,35 +161,38 @@ HRESULT __stdcall dPresent(IDXGISwapChain* __this, UINT SyncInterval, UINT Flags
 		}
 	}
 
-	RuntimeOffsets::EnsureAll();
-	// #region agent log — H13/H14: Unity deltaTime snapshot before game DLL ticks
-	SpeedHack::LogTimingProbe("present_post_offsets");
-	// #endregion
-	GameState::Tick();       // resolves AppMgr/WorldMgr/LocalPtr — must be first
-	HwidCapture::Tick();     // one-shot per session — calls Deca's DeviceIdHolder.GetDeviceId once IL2CPP is up, writes hwid.txt
-	LocalPlayer::Tick();     // reads stats from GameState::GetLocalPtr()
-	// NoclipHook installs from FeatureRuntime::ApplyOverrides (below), and only
-	// while player noclip is enabled — the unconditional per-frame call that used
-	// to live here re-ran a full IL2CPP metadata walk every frame and froze the game.
-	SharedMemory::Tick();    // shared mapping telemetry (pos + legacy bridges still using shared memory)
-	FeatureRuntime::ApplyOverrides(); // unified pipe-driven feature sync
-	SkinChanger::Tick();     // writes skin when ptr changes — uses GameState
-	// #region agent log
-	SpeedHack::LogTimingProbe("pre_apply_timescale");
-	// #endregion
-	AutoAim::Tick();         // entity dict walk — uses GameState::GetWorldMgr()
-	BagLooter::Tick();       // throttled bag scan + ext-goal routing
-	BootGate::Tick();        // boot gating loop (runs EnsureAll + audit)
-	DiagBridge::Tick();      // mirror live state to %LOCALAPPDATA%\RealmEngine\diag.json
+	Resolver::Protection::safe_call([&]() {
+		RuntimeOffsets::EnsureAll();
+		// #region agent log — H13/H14: Unity deltaTime snapshot before game DLL ticks
+		SpeedHack::LogTimingProbe("present_post_offsets");
+		// #endregion
+		GameState::Tick();       // resolves AppMgr/WorldMgr/LocalPtr — must be first
+		HwidCapture::Tick();     // one-shot per session — calls Deca's DeviceIdHolder.GetDeviceId once IL2CPP is up, writes hwid.txt
+		LocalPlayer::Tick();     // reads stats from GameState::GetLocalPtr()
+		// NoclipHook installs from FeatureRuntime::ApplyOverrides (below), and only
+		// while player noclip is enabled — the unconditional per-frame call that used
+		// to live here re-ran a full IL2CPP metadata walk every frame and froze the game.
+		SharedMemory::Tick();    // shared mapping telemetry (pos + legacy bridges still using shared memory)
+		FeatureRuntime::ApplyOverrides(); // unified pipe-driven feature sync
+		SkinChanger::Tick();     // writes skin when ptr changes — uses GameState
+		// #region agent log
+		SpeedHack::LogTimingProbe("pre_apply_timescale");
+		// #endregion
+		AutoAim::Tick();         // entity dict walk — uses GameState::GetWorldMgr()
+		BagLooter::Tick();       // throttled bag scan + ext-goal routing
+		BootGate::Tick();        // boot gating loop (runs EnsureAll + audit)
+		DiagBridge::Tick();      // mirror live state to %LOCALAPPDATA%\RealmEngine\diag.json
+	});
 
 	DXGI_SWAP_CHAIN_DESC sd{};
 	__this->GetDesc(&sd);
 
-	if (!settings.ImGuiInitialized) {
-		HWND targetHwnd = sd.OutputWindow;
-		if (!targetHwnd || !IsWindow(targetHwnd)) targetHwnd = GetActiveWindow();
-		if (!targetHwnd || !IsWindow(targetHwnd)) targetHwnd = FindWindowA("UnityWndClass", nullptr);
+	HWND targetHwnd = sd.OutputWindow;
+	if (!targetHwnd || !IsWindow(targetHwnd)) targetHwnd = FindWindowA("UnityWndClass", nullptr);
+	if (!targetHwnd || !IsWindow(targetHwnd)) targetHwnd = GetForegroundWindow();
+	if (!targetHwnd || !IsWindow(targetHwnd)) targetHwnd = GetActiveWindow();
 
+	if (!settings.ImGuiInitialized) {
 		if (targetHwnd && IsWindow(targetHwnd)) {
 			DirectX::window = targetHwnd;
 			__this->GetDevice(__uuidof(ID3D11Device), (void**)&DirectX::pDevice);
@@ -232,12 +212,12 @@ HRESULT __stdcall dPresent(IDXGISwapChain* __this, UINT SyncInterval, UINT Flags
 				DBG_FILE_LOG("[DirectX] ImGui initialized on hwnd=" << (void*)DirectX::window);
 			}
 		}
-	} else if (sd.OutputWindow && IsWindow(sd.OutputWindow) && DirectX::window != sd.OutputWindow) {
-		DBG_FILE_LOG("[DirectX] Window handle migrated from " << (void*)DirectX::window << " to " << (void*)sd.OutputWindow);
+	} else if (targetHwnd && IsWindow(targetHwnd) && (!DirectX::window || !IsWindow(DirectX::window) || DirectX::window != targetHwnd)) {
+		DBG_FILE_LOG("[DirectX] Window handle migrated from " << (void*)DirectX::window << " to " << (void*)targetHwnd);
 		if (DirectX::window && IsWindow(DirectX::window) && oWndProc) {
 			SetWindowLongPtr(DirectX::window, GWLP_WNDPROC, (LONG_PTR)oWndProc);
 		}
-		DirectX::window = sd.OutputWindow;
+		DirectX::window = targetHwnd;
 		oWndProc = (WNDPROC)SetWindowLongPtr(DirectX::window, GWLP_WNDPROC, (LONG_PTR)dWndProc);
 		UpdateCachedClientSize();
 		ImGui_ImplWin32_Shutdown();
@@ -249,8 +229,12 @@ HRESULT __stdcall dPresent(IDXGISwapChain* __this, UINT SyncInterval, UINT Flags
 	}
 
 	static IDXGISwapChain* s_lastSwapChain = nullptr;
-	if (s_lastSwapChain != __this) {
+	static UINT s_lastWidth = 0;
+	static UINT s_lastHeight = 0;
+	if (s_lastSwapChain != __this || sd.BufferDesc.Width != s_lastWidth || sd.BufferDesc.Height != s_lastHeight) {
 		s_lastSwapChain = __this;
+		s_lastWidth = sd.BufferDesc.Width;
+		s_lastHeight = sd.BufferDesc.Height;
 		if (pRenderTargetView) {
 			pRenderTargetView->Release();
 			pRenderTargetView = nullptr;
@@ -260,15 +244,18 @@ HRESULT __stdcall dPresent(IDXGISwapChain* __this, UINT SyncInterval, UINT Flags
 	if (settings.ImGuiInitialized && DirectX::hRenderSemaphore && WaitForSingleObject(DirectX::hRenderSemaphore, 0) == WAIT_OBJECT_0) {
 		ID3D11Device* curDevice = nullptr;
 		if (SUCCEEDED(__this->GetDevice(__uuidof(ID3D11Device), (void**)&curDevice)) && curDevice) {
-			if (DirectX::pDevice && DirectX::pDevice != curDevice) {
+			if (!DirectX::pDevice || DirectX::pDevice != curDevice) {
 				DBG_FILE_LOG("[DirectX] Device migrated from " << (void*)DirectX::pDevice << " to " << (void*)curDevice);
 				if (pRenderTargetView) { pRenderTargetView->Release(); pRenderTargetView = nullptr; }
 				if (DirectX::pContext) { DirectX::pContext->Release(); DirectX::pContext = nullptr; }
-				if (DirectX::pDevice) { DirectX::pDevice->Release(); DirectX::pDevice = nullptr; }
+				if (DirectX::pDevice) {
+					ImGui_ImplDX11_Shutdown();
+					DirectX::pDevice->Release();
+					DirectX::pDevice = nullptr;
+				}
 
 				DirectX::pDevice = curDevice;
 				DirectX::pDevice->GetImmediateContext(&DirectX::pContext);
-				ImGui_ImplDX11_Shutdown();
 				ImGui_ImplDX11_Init(DirectX::pDevice, DirectX::pContext);
 			} else {
 				curDevice->Release();
@@ -290,6 +277,19 @@ HRESULT __stdcall dPresent(IDXGISwapChain* __this, UINT SyncInterval, UINT Flags
 
 		ImGui_ImplDX11_NewFrame();
 		ImGui_ImplWin32_NewFrame();
+
+		// Ensure valid DisplaySize even if window rect temporarily reports 0 during scene transitions
+		ImGuiIO& io = ImGui::GetIO();
+		if (io.DisplaySize.x <= 0.0f || io.DisplaySize.y <= 0.0f) {
+			if (sd.BufferDesc.Width > 0 && sd.BufferDesc.Height > 0) {
+				io.DisplaySize = ImVec2(static_cast<float>(sd.BufferDesc.Width), static_cast<float>(sd.BufferDesc.Height));
+			} else if (s_cachedScreenW > 0.f && s_cachedScreenH > 0.f) {
+				io.DisplaySize = ImVec2(s_cachedScreenW, s_cachedScreenH);
+			} else {
+				io.DisplaySize = ImVec2(1280.f, 800.f);
+			}
+		}
+
 		ImGui::NewFrame();
 
 		ImGui::GetIO().MouseDrawCursor = settings.bShowMenu;
@@ -303,11 +303,13 @@ HRESULT __stdcall dPresent(IDXGISwapChain* __this, UINT SyncInterval, UINT Flags
 			settings.bShowMenu = !settings.bShowMenu;
 		}
 
-		// Run per-frame logic.
-		TestTAB::Tick(settings.bShowMenu);
-		VisualsTAB::Tick(settings.bShowMenu);
-		CombatTAB::Tick(settings.bShowMenu);
-		PlayerTAB::Tick(settings.bShowMenu);
+		// Run per-frame logic safely.
+		Resolver::Protection::safe_call([&]() {
+			TestTAB::Tick(settings.bShowMenu);
+			VisualsTAB::Tick(settings.bShowMenu);
+			CombatTAB::Tick(settings.bShowMenu);
+			PlayerTAB::Tick(settings.bShowMenu);
+		});
 		DrawFpsOverlayTopCameraRect();
 
 		// Persistent HUD button for touch / Steam Deck / mouse click
@@ -339,13 +341,12 @@ HRESULT __stdcall dPresent(IDXGISwapChain* __this, UINT SyncInterval, UINT Flags
 		// Render menu when open.
 		if (settings.bShowMenu) {
 			// Menu layout — two stacked windows anchored to the top-left of the
-			// game surface. Sizes are fixed to keep the ImGui state deterministic
-			// across resolutions; the tab bar is 36 px tall and the content
-			// panel is 420 x 560 immediately below it.
-			constexpr float kMenuBarWidth   = 1000.0f;
+			// game surface. Dimensions clamp to the active display size so they
+			// fit cleanly on smaller screens (e.g. 800p / Steam Deck / 720p).
+			const float kMenuBarWidth   = (std::min)(1000.0f, io.DisplaySize.x);
 			constexpr float kMenuBarHeight  =   36.0f;
-			constexpr float kMenuContentW   =  420.0f;
-			constexpr float kMenuContentH   =  560.0f;
+			const float kMenuContentW   = (std::min)(420.0f, io.DisplaySize.x);
+			const float kMenuContentH   = (std::min)(560.0f, (std::max)(200.0f, io.DisplaySize.y - kMenuBarHeight));
 
 			ImGui::SetNextWindowSize(ImVec2(kMenuBarWidth, kMenuBarHeight), ImGuiCond_Always);
 			ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_Always);
