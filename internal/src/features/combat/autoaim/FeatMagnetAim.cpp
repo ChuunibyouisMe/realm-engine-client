@@ -30,10 +30,10 @@ void Render()
 
     ImGui::Checkbox("Enable##magnetAimEnable", &s_enabled);
     if (s_enabled) {
-        ImGui::SliderFloat("Offset Distance##magnetOffset", &s_visualOffsetTiles, 0.2f, 3.0f, "%.1f tiles");
+        ImGui::SliderFloat("Magnet Aim Range##magnetOffset", &s_visualOffsetTiles, 1.0f, 2.25f, "%.3f tiles");
     }
     ImGui::TextDisabled("Advances the local SpawnProjectile origin toward the target.");
-    ImGui::TextDisabled("Extends effective range and reduces projectile flight time.");
+    ImGui::TextDisabled("Extends effective range and reduces projectile flight time (1.000 - 2.250 tiles).");
 }
 
 } // namespace FeatMagnetAim
