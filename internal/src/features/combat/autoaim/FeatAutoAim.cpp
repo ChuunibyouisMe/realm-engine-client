@@ -34,17 +34,12 @@ static char    s_skipInputBuf[32] = {};
 
 void Tick(bool /*menuOpen*/)
 {
-    static bool s_wasKeyDown = false;
-    const bool isKeyDown = (settings.KeyBinds.Toggle_AutoAim != 0) &&
-                           KeyBinds::IsKeyPressed(settings.KeyBinds.Toggle_AutoAim) &&
-                           !s_capturingKey;
-    if (isKeyDown && !s_wasKeyDown) {
-        s_aimEnabled = !s_aimEnabled;
+    if (settings.KeyBinds.Toggle_AutoAim != 0 && KeyBinds::IsKeyPressed(settings.KeyBinds.Toggle_AutoAim) && !s_capturingKey) {
+        s_aimEnabled = !FeatureState::GetAutoAimEnabled();
         FeatureState::SetAutoAimEnabled(s_aimEnabled);
     } else {
         s_aimEnabled   = FeatureState::GetAutoAimEnabled();
     }
-    s_wasKeyDown   = isKeyDown;
     s_aimMode      = FeatureState::GetAutoAimMode();
     s_noclipEnabled = ProjNoclip::IsEnabled();
 

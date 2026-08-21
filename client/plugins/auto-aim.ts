@@ -108,7 +108,6 @@ export function register(ctx: PluginContext) {
     const pd = client.playerData;
     const def = pd.defense + pd.defenseBonus;
     const cls = pd.classType ?? 0;
-    syncControlState();
     if (!loggedBridgeTelemetry) {
       loggedBridgeTelemetry = true;
       // #region agent log
