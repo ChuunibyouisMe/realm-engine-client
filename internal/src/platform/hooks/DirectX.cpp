@@ -344,7 +344,7 @@ HRESULT __stdcall dPresent(IDXGISwapChain* __this, UINT SyncInterval, UINT Flags
 				ImGuiWindowFlags_NoMove | ImGuiWindowFlags_AlwaysAutoResize |
 				ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing)) {
 
-				const char* hudText = settings.bShowMenu ? "⚡ Close Menu" : "⚡ Realm Engine (TAB)";
+				const char* hudText = settings.bShowMenu ? "⚡ Close Menu" : "⚡ Realm Engine (INSERT)";
 				ImGui::PushStyleColor(ImGuiCol_Button, settings.bShowMenu ? ImVec4(0.15f, 0.45f, 0.35f, 0.85f) : ImVec4(0.18f, 0.22f, 0.28f, 0.85f));
 				ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.25f, 0.65f, 0.50f, 1.0f));
 				ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.95f, 0.95f, 1.0f, 1.0f));

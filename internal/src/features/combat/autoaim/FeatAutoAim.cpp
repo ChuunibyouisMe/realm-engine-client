@@ -3,6 +3,8 @@
 #include "AutoAim.h"
 #include "ProjNoclip.h"
 #include "FeatureState.h"
+#include "core/config/settings.h"
+#include "core/config/keybinds.h"
 #include <imgui/imgui.h>
 #include <cstdio>
 #include <cstdlib>
@@ -22,6 +24,7 @@ static bool  s_shootWhileStealthed = true;
 static bool  s_mouseBoundingOn     = true;
 static float s_mouseBoundingRange  = 2.f;
 static float s_rangeLeadBias       = 1.f;
+static bool  s_capturingKey        = false;
 
 // Phase-skip list — editable in the UI; stored as a fixed-capacity array of raw ints.
 static constexpr int kMaxSkipTypes = 16;
@@ -31,7 +34,12 @@ static char    s_skipInputBuf[32] = {};
 
 void Tick(bool /*menuOpen*/)
 {
-    s_aimEnabled   = FeatureState::GetAutoAimEnabled();
+    if (settings.KeyBinds.Toggle_AutoAim != 0 && KeyBinds::IsKeyPressed(settings.KeyBinds.Toggle_AutoAim) && !s_capturingKey) {
+        s_aimEnabled = !s_aimEnabled;
+        FeatureState::SetAutoAimEnabled(s_aimEnabled);
+    } else {
+        s_aimEnabled   = FeatureState::GetAutoAimEnabled();
+    }
     s_aimMode      = FeatureState::GetAutoAimMode();
     s_noclipEnabled = ProjNoclip::IsEnabled();
 
@@ -56,6 +64,36 @@ void Render()
 
     if (ImGui::Checkbox("Enable##aaEnable", &s_aimEnabled))
         FeatureState::SetAutoAimEnabled(s_aimEnabled);
+
+    ImGui::SameLine();
+    char keyBtnLabel[48];
+    if (s_capturingKey) {
+        snprintf(keyBtnLabel, sizeof(keyBtnLabel), "[ Press Key ]##aaKey");
+    } else if (settings.KeyBinds.Toggle_AutoAim != 0) {
+        snprintf(keyBtnLabel, sizeof(keyBtnLabel), "[ Key: %s ]##aaKey", KeyBinds::ToString(settings.KeyBinds.Toggle_AutoAim));
+    } else {
+        snprintf(keyBtnLabel, sizeof(keyBtnLabel), "[ Key: None ]##aaKey");
+    }
+
+    ImGui::PushStyleColor(ImGuiCol_Button, s_capturingKey ? ImVec4(0.5f, 0.2f, 0.2f, 1.0f) : ImVec4(0.2f, 0.25f, 0.3f, 0.85f));
+    if (ImGui::Button(keyBtnLabel)) {
+        s_capturingKey = !s_capturingKey;
+    }
+    ImGui::PopStyleColor();
+
+    if (s_capturingKey) {
+        for (uint8_t k : KeyBinds::GetValidKeys()) {
+            if (KeyBinds::IsKeyPressed(k)) {
+                if (k == VK_ESCAPE) {
+                    settings.KeyBinds.Toggle_AutoAim = 0;
+                } else {
+                    settings.KeyBinds.Toggle_AutoAim = k;
+                }
+                s_capturingKey = false;
+                break;
+            }
+        }
+    }
 
     ImGui::Spacing();
     ImGui::TextDisabled("Aim mode");

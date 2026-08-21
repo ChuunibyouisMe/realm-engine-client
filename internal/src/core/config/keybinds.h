@@ -7,6 +7,7 @@
 namespace KeyBinds {
     struct Config {
         uint8_t Toggle_Menu;
+        uint8_t Toggle_AutoAim;
     };
 
     void WndProc(UINT uMsg, WPARAM wParam, LPARAM lParam);

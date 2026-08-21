@@ -5,7 +5,8 @@
 class Settings {
 public:
  KeyBinds::Config KeyBinds = {
- VK_TAB // toggle menu
+ VK_TAB, // toggle menu
+ 0       // toggle auto aim
  };
 
  bool ImGuiInitialized = false;
