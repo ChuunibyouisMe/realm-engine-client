@@ -72,7 +72,8 @@ dx11api::dx11api()
     DBG_FILE_LOG("[dx11api] Reading swap chain vtable...");
     void** pVMT = *(void***)pSwapChain;
     presentFunction = (D3D_PRESENT_FUNCTION)pVMT[8];
-    DBG_FILE_LOG("[dx11api] vtable[8] (Present) = " << (void*)presentFunction);
+    resizeBuffersFunction = (D3D_RESIZE_BUFFERS_FUNCTION)pVMT[13];
+    DBG_FILE_LOG("[dx11api] vtable[8] (Present) = " << (void*)presentFunction << ", vtable[13] (ResizeBuffers) = " << (void*)resizeBuffersFunction);
 
     if (pSwapChain) {
         pSwapChain->Release();

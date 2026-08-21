@@ -153,6 +153,7 @@ void DetourInitilization() {
     }
 
     oPresent = d3d11.presentFunction;
+    oResizeBuffers = d3d11.resizeBuffersFunction;
 
     if (!oPresent) {
         std::cout << "[ERROR]: oPresent is null!" << std::endl;
@@ -164,6 +165,13 @@ void DetourInitilization() {
     if (!HookFunction(&(PVOID&)oPresent, (PVOID)dPresent, "D3D_PRESENT_FUNCTION")) {
         DetourTransactionAbort();
         return;
+    }
+
+    if (oResizeBuffers) {
+        std::cout << "[INFO]: Attempting to hook oResizeBuffers at address: " << oResizeBuffers << std::endl;
+        if (!HookFunction(&(PVOID&)oResizeBuffers, (PVOID)dResizeBuffers, "D3D_RESIZE_BUFFERS_FUNCTION")) {
+            std::cout << "[WARN]: Failed to hook oResizeBuffers" << std::endl;
+        }
     }
 
     DetourTransactionCommit();
@@ -204,17 +212,17 @@ void DetourUninitialization()
         MH_DisableHook(MH_ALL_HOOKS);
         MH_Uninitialize();
 
-        // 5) Detach DXGI Present last so the render thread stops entering our detour.
-        if (oPresent) {
-            DetourTransactionBegin();
-            DetourUpdateThread(GetCurrentThread());
-            const LONG detachErr = DetourDetach(&(PVOID&)oPresent, (PVOID)dPresent);
-            if (detachErr != NO_ERROR) {
-                DetourTransactionAbort();
-            } else if (DetourTransactionCommit() != NO_ERROR) {
-                DetourTransactionAbort();
-            }
+        // 5) Detach DXGI hooks last so the render thread stops entering our detours.
+        DetourTransactionBegin();
+        DetourUpdateThread(GetCurrentThread());
+        if (oResizeBuffers) {
+            DetourDetach(&(PVOID&)oResizeBuffers, (PVOID)dResizeBuffers);
+            oResizeBuffers = nullptr;
         }
-        oPresent = nullptr;
+        if (oPresent) {
+            DetourDetach(&(PVOID&)oPresent, (PVOID)dPresent);
+            oPresent = nullptr;
+        }
+        DetourTransactionCommit();
     });
 }

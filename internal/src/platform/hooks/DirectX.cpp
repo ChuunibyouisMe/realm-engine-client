@@ -75,6 +75,7 @@ void DrawFpsOverlayTopCameraRect()
 } // namespace
 
 D3D_PRESENT_FUNCTION oPresent = nullptr;
+D3D_RESIZE_BUFFERS_FUNCTION oResizeBuffers = nullptr;
 HWND DirectX::window = nullptr;
 HANDLE DirectX::hRenderSemaphore = nullptr;
 ID3D11Device* DirectX::pDevice = nullptr;
@@ -82,6 +83,24 @@ ID3D11DeviceContext* DirectX::pContext = nullptr;
 static ID3D11RenderTargetView* pRenderTargetView = nullptr;
 static WNDPROC oWndProc = nullptr;
 static std::atomic<bool> g_unloading{false};
+
+HRESULT __stdcall dResizeBuffers(IDXGISwapChain* __this, UINT BufferCount, UINT Width, UINT Height, DXGI_FORMAT NewFormat, UINT SwapChainFlags) {
+	DBG_FILE_LOG("[DirectX] dResizeBuffers called! Width=" << Width << " Height=" << Height << " Releasing RenderTargetView...");
+	if (DirectX::hRenderSemaphore) {
+		WaitForSingleObject(DirectX::hRenderSemaphore, 1000);
+	}
+	if (pRenderTargetView) {
+		pRenderTargetView->Release();
+		pRenderTargetView = nullptr;
+	}
+	if (DirectX::hRenderSemaphore) {
+		ReleaseSemaphore(DirectX::hRenderSemaphore, 1, nullptr);
+	}
+	if (oResizeBuffers) {
+		return oResizeBuffers(__this, BufferCount, Width, Height, NewFormat, SwapChainFlags);
+	}
+	return S_OK;
+}
 
 extern LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
