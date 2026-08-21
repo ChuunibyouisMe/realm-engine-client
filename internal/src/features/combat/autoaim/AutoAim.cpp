@@ -69,7 +69,7 @@ static bool LocalStealthBlocksAim(void* player)
 
 static void RunTick()
 {
-    const bool aimOn = s_enabled.load(std::memory_order_relaxed);
+    const bool aimOn = s_enabled.load(std::memory_order_relaxed) || s_magnetAim.load(std::memory_order_relaxed);
 
     void* local = GameState::GetLocalPtr();
 

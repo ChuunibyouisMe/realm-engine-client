@@ -223,30 +223,22 @@ void* __fastcall SpawnProjectileDetour(
     const int32_t dk = g_LocalDictKey.load(std::memory_order_relaxed);
     const bool isLocalShot = !canHitPlayer && !isAbility && (localId == 0 || attackerObjId == localId || static_cast<int32_t>(ownerObjId) == localId || (dk != 0 && (attackerObjId == dk || static_cast<int32_t>(ownerObjId) == dk)));
 
-    if (isLocalShot && AutoAim::IsMagnetAim()) {
+    if (isLocalShot && AutoAim::IsMagnetAim() && AutoAim::HasTarget() && (fabsf(playerX) > 0.1f || fabsf(playerY) > 0.1f)) {
         const float magnetTiles = AutoAim::GetMagnetAimRange();
-        bool useTarget = false;
-        if (AutoAim::HasTarget() && (fabsf(playerX) > 0.1f || fabsf(playerY) > 0.1f)) {
-            float targetX = 0.f, targetY = 0.f;
-            AutoAim::GetAimTarget(targetX, targetY);
+        float targetX = 0.f, targetY = 0.f;
+        AutoAim::GetAimTarget(targetX, targetY);
 
-            const float dx = targetX - playerX;
-            const float dy = targetY - playerY;
-            const float dist = sqrtf(dx * dx + dy * dy);
-            if (dist > 1e-4f) {
-                if (dist <= magnetTiles) {
-                    spawnX = dx;
-                    spawnY = dy;
-                } else {
-                    spawnX = (dx / dist) * magnetTiles;
-                    spawnY = (dy / dist) * magnetTiles;
-                }
-                useTarget = true;
+        const float dx = targetX - playerX;
+        const float dy = targetY - playerY;
+        const float dist = sqrtf(dx * dx + dy * dy);
+        if (dist > 1e-4f) {
+            if (dist <= magnetTiles) {
+                spawnX = dx;
+                spawnY = dy;
+            } else if (AutoAim::IsMagnetRangeExt()) {
+                spawnX = (dx / dist) * magnetTiles;
+                spawnY = (dy / dist) * magnetTiles;
             }
-        }
-        if (!useTarget) {
-            spawnX = cosf(angle) * magnetTiles;
-            spawnY = sinf(angle) * magnetTiles;
         }
     } else {
         const float muzzleTiles = g_localMuzzleOffsetTiles.load(std::memory_order_relaxed);

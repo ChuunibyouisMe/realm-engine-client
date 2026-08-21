@@ -116,6 +116,7 @@ namespace {
         s_renderAimInfo = ReadInt("renderAimInfo", s_renderAimInfo ? 1 : 0) != 0;
 
         FeatureState::SetAutoAimEnabled(s_aimEnabled);
+        AutoAim::SetEnabled(s_aimEnabled);
         AutoAim::SetShootInvulnerable(s_targetInvulnerable);
         AutoAim::SetPredictiveAim(s_predictiveAim);
         AutoAim::SetPredictiveLead(s_predictiveLead);
@@ -229,6 +230,7 @@ void Tick(bool /*menuOpen*/)
     if (settings.KeyBinds.Toggle_AutoAim != 0 && KeyBinds::IsKeyPressed(settings.KeyBinds.Toggle_AutoAim) && !s_capturingKey) {
         s_aimEnabled = !s_aimEnabled;
         FeatureState::SetAutoAimEnabled(s_aimEnabled);
+        AutoAim::SetEnabled(s_aimEnabled);
         SaveConfig();
     } else {
         s_aimEnabled = FeatureState::GetAutoAimEnabled();
@@ -295,6 +297,7 @@ void Render()
 
     if (ImGui::Checkbox("Auto Aim  ##claudebawtAutoAim", &s_aimEnabled)) {
         FeatureState::SetAutoAimEnabled(s_aimEnabled);
+        AutoAim::SetEnabled(s_aimEnabled);
         SaveConfig();
     }
 
