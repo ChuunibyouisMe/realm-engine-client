@@ -54,8 +54,12 @@ dx11api::dx11api()
     ID3D11Device* pDevice = nullptr;
     ID3D11DeviceContext* pContext = nullptr;
 
-    DBG_FILE_LOG("[dx11api] Calling D3D11CreateDeviceAndSwapChain...");
+    DBG_FILE_LOG("[dx11api] Calling D3D11CreateDeviceAndSwapChain (HARDWARE)...");
     HRESULT result = D3D11CreateDeviceAndSwapChain(NULL, D3D_DRIVER_TYPE_HARDWARE, NULL, 0, featureLevels, 2, D3D11_SDK_VERSION, &swapChainDesc, &pSwapChain, &pDevice, &featureLevel, &pContext);
+    if (FAILED(result)) {
+        DBG_FILE_LOG("[dx11api] HARDWARE failed (0x" << std::hex << result << std::dec << "), retrying with WARP...");
+        result = D3D11CreateDeviceAndSwapChain(NULL, D3D_DRIVER_TYPE_WARP, NULL, 0, featureLevels, 2, D3D11_SDK_VERSION, &swapChainDesc, &pSwapChain, &pDevice, &featureLevel, &pContext);
+    }
     DBG_FILE_LOG("[dx11api] D3D11CreateDeviceAndSwapChain returned hr=0x" << std::hex << result << std::dec << " pSwapChain=" << (void*)pSwapChain);
 
     if (FAILED(result)) {
