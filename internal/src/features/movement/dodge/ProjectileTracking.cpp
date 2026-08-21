@@ -221,11 +221,11 @@ void* __fastcall SpawnProjectileDetour(
             if (fabsf(entityX) > 0.5f || fabsf(entityY) > 0.5f) {
                 const float dx = targetX - entityX;
                 const float dy = targetY - entityY;
-                const float lenSq = dx * dx + dy * dy;
-                if (lenSq > 1e-6f) {
-                    const float invLen = 1.f / sqrtf(lenSq);
-                    spawnX = dx * invLen * magnetTiles;
-                    spawnY = dy * invLen * magnetTiles;
+                const float dist = sqrtf(dx * dx + dy * dy);
+                if (dist > 1e-4f) {
+                    const float advance = (std::min)(dist, magnetTiles);
+                    spawnX = (dx / dist) * advance;
+                    spawnY = (dy / dist) * advance;
                     useTarget = true;
                 }
             }
