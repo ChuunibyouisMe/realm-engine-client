@@ -53,6 +53,16 @@ enum class Style : int { FillOnly = 0, OutlineOnly = 1, Both = 2 };
 void  SetStyle(Style s);
 Style GetStyle();
 
+// Ignore shots whose maximum damage is below this, so chip damage stops closing
+// off ground you would happily stand on. 0 disables the filter.
+//
+// Two deliberate choices: it tests *max* damage, not min, so nothing that could
+// hit hard is ever discarded; and a projectile whose damage reads 0 — unresolved
+// rather than harmless — is always kept. A safety overlay should fail toward
+// showing danger.
+void SetMinDamage(int dmg);
+int  GetMinDamage();
+
 // Minimum clearance, in tiles, before a safe pocket is worth showing. The field
 // already accounts for the player's hitbox, so a cell marked safe is one you
 // would technically fit in — but a gap only as wide as your hitbox is not a gap
@@ -84,6 +94,7 @@ void Render();
 
 // ── Diagnostics for the settings panel ───────────────────────────────────────
 int   GetThreatCount();     // projectiles folded into the last rebuild
+int   GetFilteredCount();   // projectiles skipped by the damage filter
 float GetLastBuildUs();     // microseconds spent in the last rebuild
 int   GetSafeCellCount();   // cells with no predicted impact in the horizon
 

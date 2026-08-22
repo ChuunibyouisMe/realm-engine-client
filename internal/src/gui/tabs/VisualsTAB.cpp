@@ -176,6 +176,20 @@ void Render()
         if (ImGui::SliderFloat("Look ahead (ms)##szmHorizon", &horizon, 300.f, 4000.f, "%.0f"))
             SafeZoneMap::SetHorizonMs(horizon);
 
+        int minDmg = SafeZoneMap::GetMinDamage();
+        if (ImGui::SliderInt("Ignore damage below##szmMinDmg", &minDmg, 0, 200))
+            SafeZoneMap::SetMinDamage(minDmg);
+        ImGui::PopItemWidth();
+        ImGui::SameLine(); ImGui::TextDisabled("(?)");
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip(
+                "Shots weaker than this are left out entirely, so chip damage\n"
+                "stops closing off ground you would happily stand on.\n"
+                "0 disables the filter. Compares against a shot's MAX damage,\n"
+                "and shots whose damage cannot be read are always kept.\n"
+                "Note this is raw damage, before your defense.");
+        ImGui::PushItemWidth(180.f);
+
         float dangerWin = SafeZoneMap::GetDangerWindowMs();
         if (ImGui::SliderFloat("Danger window (ms)##szmDangerWin", &dangerWin, 100.f, 2000.f, "%.0f"))
             SafeZoneMap::SetDangerWindowMs(dangerWin);
@@ -220,6 +234,7 @@ void Render()
         if (SafeZoneMap::IsEnabled()) {
             ImGui::TextDisabled("effective reach: %.1f tiles (from SPD stat, not live speed)",
                                 static_cast<double>(SafeZoneMap::GetEffectiveReachTiles()));
+            ImGui::TextDisabled("ignored as too weak: %d shot(s)", SafeZoneMap::GetFilteredCount());
             ImGui::TextDisabled("shots folded in: %d   comfortable cells: %d   rebuild: %.0f us",
                                 SafeZoneMap::GetThreatCount(),
                                 SafeZoneMap::GetSafeCellCount(),

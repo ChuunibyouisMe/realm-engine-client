@@ -58,6 +58,8 @@ static std::atomic<float> s_maxReachTiles{ 9.f };
 static std::atomic<float> s_effReachTiles{ 0.f };
 static std::atomic<float> s_dangerWindowMs{ 450.f };
 static std::atomic<int>   s_style{ 2 };   // Style::Both
+static std::atomic<int>   s_minDamage{ 10 };
+static std::atomic<int>   s_filteredCount{ 0 };
 
 // Per-cell render classification, rebuilt each frame: 0 = draw nothing,
 // 1 = comfortable safe ground, 2 = imminent danger.
@@ -178,9 +180,16 @@ static void Rebuild(float px, float py)
     constexpr float kStepMs = 40.f;
     const int maxSteps = static_cast<int>(horizon / kStepMs) + 1;
 
+    const int minDmg = s_minDamage.load(std::memory_order_relaxed);
+
     int threats = 0;
+    int filtered = 0;
     for (const WorldProjectile& p : s_projScratch) {
         if (!p.valid) continue;
+        // Chip damage should not close off ground you would happily stand on.
+        // Tested against max damage so nothing that *could* hit hard is dropped,
+        // and a damage of 0 means "not resolved", not "harmless" — keep those.
+        if (minDmg > 0 && p.damage > 0 && p.damage < minDmg) { ++filtered; continue; }
         // Our own shots can't hurt us.
         if (localId != 0 && (p.attackerObjId == localId ||
                              static_cast<int32_t>(p.ownerObjId) == localId)) continue;
@@ -276,6 +285,7 @@ static void Rebuild(float px, float py)
         ? static_cast<float>((t1.QuadPart - t0.QuadPart) * 1000000.0 / static_cast<double>(freq.QuadPart))
         : 0.f, std::memory_order_relaxed);
     s_threatCount.store(threats, std::memory_order_relaxed);
+    s_filteredCount.store(filtered, std::memory_order_relaxed);
     s_safeCells.store(safeCells, std::memory_order_relaxed);
     s_haveField = true;
 }
@@ -335,6 +345,14 @@ float GetMaxReachTiles()       { return s_maxReachTiles.load(std::memory_order_r
 float GetEffectiveReachTiles() { return s_effReachTiles.load(std::memory_order_relaxed); }
 
 int   GetThreatCount()  { return s_threatCount.load(std::memory_order_relaxed); }
+int   GetFilteredCount(){ return s_filteredCount.load(std::memory_order_relaxed); }
+
+void SetMinDamage(int dmg) {
+    if (dmg < 0) dmg = 0;
+    if (dmg > 1000) dmg = 1000;
+    s_minDamage.store(dmg, std::memory_order_relaxed);
+}
+int GetMinDamage() { return s_minDamage.load(std::memory_order_relaxed); }
 float GetLastBuildUs()  { return s_lastBuildUs.load(std::memory_order_relaxed); }
 int   GetSafeCellCount(){ return s_safeCells.load(std::memory_order_relaxed); }
 
