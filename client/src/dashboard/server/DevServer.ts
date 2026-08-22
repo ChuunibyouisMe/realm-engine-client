@@ -2041,6 +2041,14 @@ export class DevServer {
   private handleHttp(req: http.IncomingMessage, res: http.ServerResponse): void {
     if (this.wikiSprites.tryServeWikiTextureFile(req, res)) return;
     // API endpoints
+    // Plugin load failures, so the dashboard can explain a short plugin list
+    // without the user needing shell access to read the proxy log.
+    if (req.url === '/api/plugins/failures' && req.method === 'GET') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(this.pluginManager.getLoadFailures()));
+      return;
+    }
+
     if (req.url === '/api/plugins' && req.method === 'GET') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify(this.pluginManager.getPlugins()));
@@ -3519,6 +3527,7 @@ export class DevServer {
     ws.send(JSON.stringify({
       type: 'plugins',
       data: this.pluginManager.getPlugins(),
+      failures: this.pluginManager.getLoadFailures(),
     }));
 
     // Send current game client state
@@ -3944,6 +3953,7 @@ export class DevServer {
     const pluginData = JSON.stringify({
       type: 'plugins',
       data: this.pluginManager.getPlugins(),
+      failures: this.pluginManager.getLoadFailures(),
     });
     for (const client of this.wss.clients) {
       if (client.readyState === WebSocket.OPEN) {

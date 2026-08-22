@@ -5370,6 +5370,42 @@ body.theme-light .nearby-row.selected td {
   transform: translateX(16px);
 }
 
+/* Plugin load failures — shown above the plugin cards so a short list always
+   comes with its explanation, even where the proxy log is unreachable. */
+.plugin-load-errors {
+  border: 1px solid color-mix(in srgb, #ef4444 55%, transparent);
+  background: color-mix(in srgb, #ef4444 10%, transparent);
+  border-radius: 10px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+}
+
+.plugin-load-errors-title {
+  font-weight: 600;
+  margin-bottom: 8px;
+  color: #ef4444;
+}
+
+.plugin-load-error-row {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  font-size: 12px;
+  padding: 3px 0;
+  flex-wrap: wrap;
+}
+
+.plugin-load-error-id {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  flex: 0 0 auto;
+  color: var(--text);
+}
+
+.plugin-load-error-msg {
+  color: var(--text-muted);
+  word-break: break-word;
+}
+
 /* The plugin switches are 36x20 — comfortable with a mouse, fiddly with a
    thumb on a Steam Deck screen (the dashboard is often viewed in an in-game
    browser). Grow the touch target to ~44px with a transparent overlay so the

@@ -606,6 +606,7 @@ import { NOISY_PACKETS, MAX_ROWS, MAX_PLUGIN_LOGS, CLASS_NAMES, CLASS_COLORS, SK
   const hotkeysTableBody = document.getElementById('hotkeys-table-body');
   const hotkeysStatus = document.getElementById('hotkeys-status');
   let pluginsReceived = false;
+  let pluginLoadFailures = [];
   // The server answers with an empty list while plugins are still loading, so an
   // empty response alone can't distinguish "still starting" from "broken". This
   // watchdog draws the line: after PLUGINS_STALL_MS with nothing, we stop
@@ -628,6 +629,14 @@ import { NOISY_PACKETS, MAX_ROWS, MAX_PLUGIN_LOGS, CLASS_NAMES, CLASS_COLORS, SK
       pluginsStalled = true;
       renderPlugins(Array.isArray(allPluginsData) ? allPluginsData : []);
     }, PLUGINS_STALL_MS);
+  }
+
+  /** Refresh the load-failure list, then repaint whatever is on screen. */
+  function fetchPluginFailures() {
+    return fetch('/api/plugins/failures')
+      .then(function (r) { return r.ok ? r.json() : []; })
+      .then(function (f) { pluginLoadFailures = Array.isArray(f) ? f : []; })
+      .catch(function () {});
   }
 
   function retryPluginFetch() {
@@ -3642,6 +3651,7 @@ import { NOISY_PACKETS, MAX_ROWS, MAX_PLUGIN_LOGS, CLASS_NAMES, CLASS_COLORS, SK
           break;
         case 'plugins': {
           var pl = Array.isArray(msg.data) ? msg.data : [];
+          pluginLoadFailures = Array.isArray(msg.failures) ? msg.failures : [];
           notePluginsResponse(pl.length);
           allPluginsData = pl;
           // Guarded individually: a throw in any one of these used to abort the
@@ -6590,6 +6600,34 @@ import { NOISY_PACKETS, MAX_ROWS, MAX_PLUGIN_LOGS, CLASS_NAMES, CLASS_COLORS, SK
     teleportBeaconSelectEl = null;
     detailEl.innerHTML = '';
 
+    // Plugins that threw while loading. Without this the only symptom is a
+    // short list with no explanation, and the reason lives in a log file that
+    // is unreachable when the dashboard is viewed from Game Mode.
+    if (Array.isArray(pluginLoadFailures) && pluginLoadFailures.length) {
+      var errBox = document.createElement('div');
+      errBox.className = 'plugin-load-errors';
+      var errTitle = document.createElement('div');
+      errTitle.className = 'plugin-load-errors-title';
+      errTitle.textContent = '⚠ ' + pluginLoadFailures.length + ' plugin'
+        + (pluginLoadFailures.length === 1 ? '' : 's') + ' failed to load';
+      errBox.appendChild(errTitle);
+      pluginLoadFailures.forEach(function (f) {
+        var row = document.createElement('div');
+        row.className = 'plugin-load-error-row';
+        var who = document.createElement('span');
+        who.className = 'plugin-load-error-id';
+        who.textContent = f.id;
+        var why = document.createElement('span');
+        why.className = 'plugin-load-error-msg';
+        why.textContent = f.error || 'Unknown error';
+        why.title = (f.filePath || '') + '\n' + (f.detail || '');
+        row.appendChild(who);
+        row.appendChild(why);
+        errBox.appendChild(row);
+      });
+      detailEl.appendChild(errBox);
+    }
+
     var all = plugins.slice().sort(function (a, b) {
       // Enabled first, then alphabetical — active plugins stay at the top where
       // they used to be, with everything else reachable underneath.
@@ -9009,6 +9047,7 @@ import { NOISY_PACKETS, MAX_ROWS, MAX_PLUGIN_LOGS, CLASS_NAMES, CLASS_COLORS, SK
           renderPlugins(pl);
           populateServerSelect(pl);
           renderDamageSettings(pl);
+          return fetchPluginFailures().then(function () { renderPlugins(pl); });
         })
         .catch(function () {});
     }

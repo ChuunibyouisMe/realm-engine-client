@@ -42,6 +42,17 @@ interface LoadedPlugin {
   userCleanup: UserPluginCleanup | null;
 }
 
+/** A plugin that failed to load, surfaced to the dashboard for diagnosis. */
+export interface PluginLoadFailure {
+  id: string;
+  filePath: string;
+  source: PluginSource;
+  /** Error name + message, e.g. "ERR_UNKNOWN_FILE_EXTENSION: Unknown file extension \".ts\"". */
+  error: string;
+  /** First few stack lines — enough to point at the offending import. */
+  detail: string;
+}
+
 const BUNDLED_PLUGIN_EXTS = ['.ts', '.js'] as const;
 const USER_PLUGIN_EXTS = ['.mjs'] as const;
 
@@ -138,6 +149,13 @@ export class PluginManager {
   ]);
 
   private loadedPlugins = new Map<string, LoadedPlugin>();
+  /**
+   * Plugins that threw while loading, keyed by id. Load errors used to exist
+   * only as a line in the proxy log, which is unreachable from a Steam Deck in
+   * Game Mode — the dashboard just showed a short plugin list with no
+   * explanation. Kept here so the UI can show what failed and why.
+   */
+  private failedPlugins = new Map<string, PluginLoadFailure>();
   private bundledWatcher: any = null;
   private userWatcher: any = null;
   private gameData?: GameDataLoader;
@@ -519,10 +537,24 @@ export class PluginManager {
         userCleanup,
       });
 
+      this.failedPlugins.delete(id);
       Logger.debug('plugin-load', 'PluginManager', `Loaded ${source} plugin: ${context.name || id}`);
     } catch (err) {
-      Logger.error('PluginManager', `Failed to load plugin ${id}`, err as Error);
+      const e = err as Error;
+      this.failedPlugins.set(id, {
+        id,
+        filePath,
+        source,
+        error: `${e.name}: ${e.message}`.split('\n')[0],
+        detail: String(e.stack ?? '').split('\n').slice(1, 4).join('\n'),
+      });
+      Logger.error('PluginManager', `Failed to load plugin ${id}`, e);
     }
+  }
+
+  /** Plugins that threw while loading, for the dashboard's diagnostics panel. */
+  getLoadFailures(): PluginLoadFailure[] {
+    return Array.from(this.failedPlugins.values()).sort((a, b) => a.id.localeCompare(b.id));
   }
 
   /** Unload a plugin and remove its hooks. */
@@ -544,6 +576,7 @@ export class PluginManager {
 
     this.proxy.unhookPlugin(pluginId);
     this.loadedPlugins.delete(pluginId);
+    this.failedPlugins.delete(pluginId);
     Logger.log('PluginManager', `Unloaded plugin: ${plugin.name}`);
   }
 
