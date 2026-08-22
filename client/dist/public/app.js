@@ -6555,27 +6555,51 @@ import { NOISY_PACKETS, MAX_ROWS, MAX_PLUGIN_LOGS, CLASS_NAMES, CLASS_COLORS, SK
     }
   }
 
-  function renderEnabledPluginsPanel(plugins, detailEl) {
+  /** On/off switch for a plugin card header; mirrors the sidebar toggle. */
+  function makePluginToggle(p) {
+    var toggleLabel = document.createElement('label');
+    toggleLabel.className = 'toggle-switch toggle-switch-sm plugin-card-toggle';
+    toggleLabel.innerHTML =
+      '<input type="checkbox" ' + (p.enabled ? 'checked' : '') + '>' +
+      '<span class="toggle-slider"></span>';
+    var cb = toggleLabel.querySelector('input');
+    if (p.hotkeyLocked) {
+      cb.disabled = true;
+      toggleLabel.title = 'This plugin is always enabled';
+    }
+    cb.addEventListener('change', function (e) {
+      e.stopPropagation();
+      if (!ws || ws.readyState !== 1) return;
+      ws.send(JSON.stringify({
+        type: 'togglePlugin',
+        pluginId: p.id,
+        enabled: cb.checked,
+      }));
+    });
+    toggleLabel.addEventListener('click', function (e) { e.stopPropagation(); });
+    return toggleLabel;
+  }
+
+  /**
+   * Main panel: one card per plugin, each with its own on/off switch, so every
+   * plugin can be toggled here and not only from the sidebar. Enabled plugins
+   * expand to their settings; disabled ones stay a compact header row, which
+   * keeps the panel readable with ~27 plugins instead of a wall of controls.
+   */
+  function renderPluginsPanel(plugins, detailEl) {
     teleportBeaconSelectEl = null;
     detailEl.innerHTML = '';
 
-    var enabled = plugins.filter(function (p) { return p.enabled; });
-    if (enabled.length === 0) {
-      var empty = document.createElement('div');
-      empty.className = 'plugin-detail-loading';
-      empty.innerHTML = '<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4m0 12v4M4.93 4.93l2.83 2.83m8.48 8.48l2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83m8.48-8.48l2.83-2.83"/></svg>' +
-        '<span>' + t('plugins.empty.enable') + '</span>';
-      detailEl.appendChild(empty);
-      return;
-    }
-
-    enabled.sort(function (a, b) {
+    var all = plugins.slice().sort(function (a, b) {
+      // Enabled first, then alphabetical — active plugins stay at the top where
+      // they used to be, with everything else reachable underneath.
+      if (!!a.enabled !== !!b.enabled) return a.enabled ? -1 : 1;
       return getPluginDisplayName(a).localeCompare(getPluginDisplayName(b));
     });
 
-    enabled.forEach(function (p) {
+    all.forEach(function (p) {
       var card = document.createElement('div');
-      card.className = 'plugin-active-card';
+      card.className = 'plugin-active-card' + (p.enabled ? '' : ' plugin-card-off');
       card.setAttribute('data-plugin-id', p.id);
 
       var header = document.createElement('div');
@@ -6591,10 +6615,15 @@ import { NOISY_PACKETS, MAX_ROWS, MAX_PLUGIN_LOGS, CLASS_NAMES, CLASS_COLORS, SK
       titleWrap.appendChild(hTitle);
       titleWrap.appendChild(catTag);
       header.appendChild(titleWrap);
+      header.appendChild(makePluginToggle(p));
       card.appendChild(header);
 
-      appendTeleportBeaconSection(card, p);
-      appendPluginSettingsGrid(card, p);
+      // Settings only for what's actually running; a disabled plugin's card is
+      // just its header plus the switch that turns it on.
+      if (p.enabled) {
+        appendTeleportBeaconSection(card, p);
+        appendPluginSettingsGrid(card, p);
+      }
 
       detailEl.appendChild(card);
     });
@@ -6915,7 +6944,7 @@ import { NOISY_PACKETS, MAX_ROWS, MAX_PLUGIN_LOGS, CLASS_NAMES, CLASS_COLORS, SK
     });
 
     // Main panel: show all enabled plugins with their settings
-    renderEnabledPluginsPanel(filtered, detailEl);
+    renderPluginsPanel(filtered, detailEl);
   }
 
   // Type filter chips

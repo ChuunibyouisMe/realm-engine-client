@@ -5402,6 +5402,36 @@ body.theme-light .nearby-row.selected td {
   scroll-margin-top: 12px;
 }
 
+/* Disabled plugins are listed alongside enabled ones so everything can be
+   toggled from the main panel. They collapse to a header row and are muted so
+   the active plugins still read as the primary content. */
+.plugin-active-card.plugin-card-off {
+  padding: 10px 20px;
+  border-style: dashed;
+  background: transparent;
+}
+
+.plugin-active-card.plugin-card-off .plugin-detail-title,
+.plugin-active-card.plugin-card-off .plugin-detail-category {
+  color: var(--text-muted);
+}
+
+.plugin-active-card.plugin-card-off .plugin-detail-header {
+  margin-bottom: 0;
+}
+
+/* Header becomes a row: title on the left, on/off switch pinned right. */
+.plugin-active-card .plugin-detail-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.plugin-card-toggle {
+  flex: 0 0 auto;
+}
+
 .plugin-active-card.plugin-active-card--flash {
   animation: plugin-active-card-flash 1s ease-out;
 }
