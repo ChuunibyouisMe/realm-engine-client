@@ -218,7 +218,8 @@ void Render()
                 "ground you could never reach in time stays hidden.");
 
         if (SafeZoneMap::IsEnabled()) {
-            ImGui::TextDisabled("effective reach: %.1f tiles", static_cast<double>(SafeZoneMap::GetEffectiveReachTiles()));
+            ImGui::TextDisabled("effective reach: %.1f tiles (from SPD stat, not live speed)",
+                                static_cast<double>(SafeZoneMap::GetEffectiveReachTiles()));
             ImGui::TextDisabled("shots folded in: %d   comfortable cells: %d   rebuild: %.0f us",
                                 SafeZoneMap::GetThreatCount(),
                                 SafeZoneMap::GetSafeCellCount(),

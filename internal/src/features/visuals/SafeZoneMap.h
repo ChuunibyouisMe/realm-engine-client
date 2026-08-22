@@ -62,8 +62,10 @@ void  SetComfortTiles(float tiles);
 float GetComfortTiles();
 
 // Maximum distance from the player to display, in tiles. Also clamped by how
-// far you could actually travel within the look-ahead window at your current
-// speed — safe ground you cannot reach in time is not useful information.
+// far you could travel within the look-ahead window — safe ground you cannot
+// reach in time is not useful information. That clamp uses your SPD *stat*, not
+// live move speed, so Speedy/Slowed and similar effects do not make the overlay
+// grow and shrink while you are fighting.
 void  SetMaxReachTiles(float tiles);
 float GetMaxReachTiles();
 

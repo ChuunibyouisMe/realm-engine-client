@@ -9,6 +9,7 @@
 #include "gui/tabs/TestTAB.h"
 #include "features/movement/dodge/ProjectileTracking.h"
 #include "features/projectiles/ProjectileTrajectory.h"
+#include "FeatureState.h"
 #include "core/config/settings.h"
 #include "core/config/keybinds.h"
 
@@ -400,13 +401,21 @@ void Render()
     // Reach: safe ground you cannot get to inside the look-ahead window is not
     // actionable, so bound the drawing by how far you could actually travel,
     // capped by the user's preference.
-    int32_t hp = 0, maxHp = 0;
-    float spd = 0.f, tilesPerSec = 0.f;
-    TestTAB::ReadDodgePlayerStats(hp, maxHp, spd, tilesPerSec);
+    //
+    // Derived from the SPD *stat*, not the live move speed. The game's
+    // CalcMoveSpeed folds in Speedy, Slowed, paralyse and every other transient
+    // effect, so sizing the overlay from it made the region visibly grow and
+    // shrink during a fight — distracting, and it moved for reasons that have
+    // nothing to do with where the bullets are. The stat only changes when gear
+    // or level does. FeatureState::GetClientSpeed is base + bonus, pushed from
+    // NEWTICK by the auto-aim plugin; -1 means the client has not sent one yet.
     const float cap = s_maxReachTiles.load(std::memory_order_relaxed);
-    float reach = cap;
-    if (std::isfinite(tilesPerSec) && tilesPerSec > 0.1f)
-        reach = (std::min)(cap, tilesPerSec * (horizon / 1000.f));
+    const int32_t statSpd = FeatureState::GetClientSpeed();
+    // Flash speed curve: tiles/sec = 4.0 + 5.6 * spd/75. SPD 50 when unknown.
+    const float spdForCurve = (statSpd >= 0 && statSpd <= 200)
+        ? static_cast<float>(statSpd) : 50.f;
+    const float baseTilesPerSec = 4.0f + 5.6f * (spdForCurve / 75.f);
+    float reach = (std::min)(cap, baseTilesPerSec * (horizon / 1000.f));
     if (reach < 2.f) reach = 2.f;
     s_effReachTiles.store(reach, std::memory_order_relaxed);
 
