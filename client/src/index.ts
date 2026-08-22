@@ -372,7 +372,18 @@ async function main() {
   const srcPluginsDir = resolve(ROOT, 'plugins');
   const hasSrcPlugins = existsSync(srcPluginsDir) && readdirSync(srcPluginsDir).some((f) => f.endsWith('.ts') || statSync(join(srcPluginsDir, f)).isDirectory());
   const hasDistPlugins = existsSync(distPluginsDir) && readdirSync(distPluginsDir).some((f) => f.endsWith('.js'));
-  const pluginDir = (!IS_PROD && hasSrcPlugins) ? srcPluginsDir : (hasDistPlugins ? distPluginsDir : srcPluginsDir);
+  // Which plugin flavour we can load is a property of the *runtime*, not of
+  // IS_PROD: only the tsx loader can `import()` a .ts file. When we're running
+  // as the compiled bundle (dist/app.cjs under plain node) the TypeScript
+  // sources are unloadable, so preferring them silently failed every plugin and
+  // left the dashboard on "Loading plugins…" forever. scripts/launch-steam.sh
+  // hits exactly that: it runs `node dist/app.cjs --dev`, where IS_PROD is unset
+  // but .ts is still unloadable.
+  const runningFromBundle = fileURLToPath(import.meta.url).endsWith('.cjs');
+  const canLoadTsPlugins = !runningFromBundle;
+  const pluginDir = (canLoadTsPlugins && !IS_PROD && hasSrcPlugins)
+    ? srcPluginsDir
+    : (hasDistPlugins ? distPluginsDir : srcPluginsDir);
   // In packaged builds, bundled plugins live in APP_ROOT/dist/plugins.
   // Keep loading those by default so portable can function even if API bundle is empty.
   const allowLocalDiskPlugins = !IS_PROD
@@ -469,6 +480,18 @@ async function main() {
       },
     }),
     pluginManager.loadAll().then(() => {
+      // loadPlugin logs each failure but swallows it, so a systematic problem
+      // (e.g. an unloadable plugin flavour for this runtime) used to be visible
+      // only as an empty dashboard. Call it out once, loudly.
+      if (pluginManager.getPlugins().length === 0 && existsSync(pluginDir)) {
+        Logger.error(
+          'Main',
+          `No plugins loaded from ${pluginDir} — see the "Failed to load plugin" errors above. ` +
+          (runningFromBundle && pluginDir === srcPluginsDir
+            ? 'This build runs the compiled bundle, which cannot import TypeScript plugins; run "npm run build:prod" so dist/plugins exists.'
+            : 'The dashboard will show no plugins until this is resolved.'),
+        );
+      }
       devServer?.tryAutoLoadDefaultPluginConfig();
       return pluginManager.startWatching();
     }).then(() => {
