@@ -3280,15 +3280,22 @@ export class DevServer {
 
     const ext = extname(fullPath);
     const contentType = MIME_TYPES[ext] || 'application/octet-stream';
+    // These responses used to carry no caching headers at all, which lets
+    // Chromium apply *heuristic* caching — and Electron's renderer cache
+    // survives app restarts. The result was that updating the dashboard (a git
+    // pull, a rebuild) kept showing the old app.js/style.css until the cache
+    // happened to be evicted. Everything here is read off local disk over
+    // loopback, so revalidation costs nothing; never cache it.
+    const noStore = { 'Cache-Control': 'no-store, must-revalidate', Pragma: 'no-cache', Expires: '0' };
     const acceptsGzip = (req.headers['accept-encoding'] as string || '').includes('gzip');
     const gzPath = fullPath + '.gz';
     if (acceptsGzip && existsSync(gzPath)) {
       const content = readFileSync(gzPath);
-      res.writeHead(200, { 'Content-Type': contentType, 'Content-Encoding': 'gzip' });
+      res.writeHead(200, { 'Content-Type': contentType, 'Content-Encoding': 'gzip', ...noStore });
       res.end(content);
     } else {
       const content = readFileSync(fullPath);
-      res.writeHead(200, { 'Content-Type': contentType });
+      res.writeHead(200, { 'Content-Type': contentType, ...noStore });
       res.end(content);
     }
   }
