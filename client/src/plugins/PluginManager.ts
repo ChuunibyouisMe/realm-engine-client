@@ -190,6 +190,44 @@ export class PluginManager {
     this.sessionStateResolver = sessionStateResolver;
   }
 
+  /**
+   * Everything the loader saw, for on-device diagnosis. An empty failure list
+   * paired with a short plugin list means plugins were never *discovered* —
+   * so the directories, whether they exist, and what is in them matter more
+   * than the load errors. Reachable at GET /api/plugins/diagnostics.
+   */
+  getDiagnostics(): Record<string, unknown> {
+    const describeDir = (dir: string, exts: readonly string[]) => {
+      const info: Record<string, unknown> = { path: dir, exists: existsSync(dir) };
+      if (!info.exists) return info;
+      try {
+        const entries = readdirSync(dir, { withFileTypes: true });
+        info.files = entries.filter((e) => e.isFile()).map((e) => e.name);
+        info.dirs = entries.filter((e) => e.isDirectory()).map((e) => e.name);
+        info.matchingEntries = this.discoverPluginEntries(dir, exts).map((e) => e.id).sort();
+      } catch (err) {
+        info.readError = (err as Error).message;
+      }
+      return info;
+    };
+
+    const loaded = Array.from(this.loadedPlugins.values())
+      .map((p) => ({ id: p.id, source: p.source, filePath: p.filePath }))
+      .sort((a, b) => a.id.localeCompare(b.id));
+
+    return {
+      allowLocalDiskPlugins: this.allowLocalDiskPlugins,
+      execPath: process.execPath,
+      entryPoint: process.argv[1] ?? null,
+      cwd: process.cwd(),
+      loadedCount: loaded.length,
+      loaded,
+      failures: this.getLoadFailures(),
+      bundledDir: describeDir(this.bundledPluginDir, BUNDLED_PLUGIN_EXTS),
+      userDir: describeDir(this.userPluginDir, USER_PLUGIN_EXTS),
+    };
+  }
+
   /** Get all loaded plugins (for dashboard). */
   getPlugins(): { id: string; name: string; enabled: boolean; category: PluginCategory; settings: any[]; source: PluginSource; requiredPlan: string | null; hotkey: string; hotkeyLocked: boolean }[] {
     return Array.from(this.loadedPlugins.values())

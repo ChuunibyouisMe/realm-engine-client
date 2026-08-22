@@ -2043,6 +2043,14 @@ export class DevServer {
     // API endpoints
     // Plugin load failures, so the dashboard can explain a short plugin list
     // without the user needing shell access to read the proxy log.
+    // Full loader state: resolved directories, what is in them, what loaded,
+    // and what failed. One URL to diagnose a short plugin list with no shell.
+    if (req.url === '/api/plugins/diagnostics' && req.method === 'GET') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(this.pluginManager.getDiagnostics(), null, 2));
+      return;
+    }
+
     if (req.url === '/api/plugins/failures' && req.method === 'GET') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify(this.pluginManager.getLoadFailures()));
