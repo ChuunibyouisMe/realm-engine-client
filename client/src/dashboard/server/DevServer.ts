@@ -1105,6 +1105,13 @@ export class DevServer {
       }
     });
 
+    // Hot-reload (add/change/unlink under plugins/) changes the loaded set, so
+    // push the new list to every dashboard client — otherwise the UI keeps
+    // showing the pre-reload plugin/settings state until a manual refresh.
+    this.pluginManager.onPluginsChanged(() => {
+      this.broadcastPluginState();
+    });
+
     this.config.lastPluginConfigId = DEFAULT_PLUGIN_CONFIG_ID;
   }
 
@@ -1897,7 +1904,48 @@ export class DevServer {
     }
   }
 
+  /**
+   * Report a fatal dashboard-server failure and stop the process.
+   *
+   * Previously a failed bind surfaced as an uncaughtException that the global
+   * crash logger in index.ts swallowed, leaving a proxy running with no
+   * dashboard: plugins loaded into a process serving nothing, while the app
+   * window attached to whatever stale instance still held the port and showed
+   * "Loading plugins…" forever. A proxy with no dashboard is unusable, so fail
+   * loudly and exit instead of lingering as a zombie.
+   */
+  private failStart(port: number, err: NodeJS.ErrnoException): never {
+    if (err.code === 'EADDRINUSE') {
+      Logger.error(
+        'DevServer',
+        `Port ${port} is already in use — another Realm Engine instance is still running. ` +
+        `Close it (or kill the process holding port ${port}) and start Realm Engine again.`,
+        err,
+      );
+    } else {
+      Logger.error('DevServer', `Dashboard server failed to start on port ${port}`, err);
+    }
+    process.exit(1);
+  }
+
   start(port = 3000): void {
+    // Node reports bind failures two different ways: EADDRINUSE from bind is
+    // thrown synchronously out of listen(), while post-bind failures arrive as
+    // an 'error' event. Both must be handled or we end up a zombie.
+    this.httpServer.on('error', (err: NodeJS.ErrnoException) => this.failStart(port, err));
+    // `ws` re-emits the HTTP server's 'error' on the WebSocketServer, and an
+    // unhandled 'error' event throws out of emit() — which aborted the listener
+    // chain before our httpServer handler ever ran, turning a bind failure back
+    // into the swallowed uncaughtException this fix exists to prevent.
+    this.wss.on('error', (err: NodeJS.ErrnoException) => this.failStart(port, err));
+    try {
+      this.listenOrThrow(port);
+    } catch (err) {
+      this.failStart(port, err as NodeJS.ErrnoException);
+    }
+  }
+
+  private listenOrThrow(port: number): void {
     this.httpServer.listen(port, () => {
       Logger.log('DevServer', `Dashboard available at http://localhost:${port}`);
       void this.applyExaltTuneOnProxyStartMaybe().finally(() => {

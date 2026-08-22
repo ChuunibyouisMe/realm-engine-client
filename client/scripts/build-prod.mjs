@@ -55,11 +55,12 @@ const PACKET_DEFINITIONS_JSON = readFileSync(join(DATA_DIR, 'packet-definitions.
 const STAT_TYPES_JSON = readFileSync(join(DATA_DIR, 'stat-types.json'), 'utf8');
 const SERVERS_JSON = readFileSync(join(DATA_DIR, 'servers.json'), 'utf8');
 
-const EXCLUDED_PLUGINS = new Set([
-  'auto-drink',    // directory plugin (plugins/auto-drink/), excluded from prod for now
-]);
+// Plugins kept out of every packaged build. Empty on purpose — auto-drink
+// (a directory plugin, plugins/auto-drink/) used to sit here and is now shipped.
+const EXCLUDED_PLUGINS = new Set([]);
+// Plugins bundled only into --admin builds. auto-ability ships to everyone now;
+// packet-logger stays admin-only (it's a raw wire-dump debugging tool).
 const ADMIN_ONLY_PLUGINS = new Set([
-  'auto-ability.ts',
   'packet-logger.ts',
 ]);
 

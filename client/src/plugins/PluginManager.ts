@@ -147,6 +147,7 @@ export class PluginManager {
     worldState: GameWorldState | null;
     projectileTracker: ProjectileTracker | null;
   };
+  private pluginsChangedListeners = new Set<() => void>();
   private dashboardLogListeners = new Set<(pluginName: string, message: string) => void>();
   private broadcastDataListeners = new Set<(pluginId: string, type: string, data: any) => void>();
 
@@ -279,6 +280,24 @@ export class PluginManager {
         continue;
       }
       plugin.context.enabled = false;
+    }
+  }
+
+  /**
+   * Subscribe to changes in the loaded plugin set (hot-reload add/change/unlink).
+   * The dashboard uses this to re-broadcast its plugin list; without it a
+   * hot-reloaded plugin kept showing its pre-reload settings until a refresh.
+   */
+  onPluginsChanged(listener: () => void): () => void {
+    this.pluginsChangedListeners.add(listener);
+    return () => this.pluginsChangedListeners.delete(listener);
+  }
+
+  private notifyPluginsChanged(): void {
+    for (const listener of this.pluginsChangedListeners) {
+      try { listener(); } catch (err) {
+        Logger.warn('PluginManager', `plugins-changed listener threw: ${(err as Error).message}`);
+      }
     }
   }
 
@@ -557,6 +576,7 @@ export class PluginManager {
       if (!target) return;
       Logger.log('PluginManager', `Plugin changed: ${target.id}, reloading...`);
       await this.loadPlugin(target.entryPath, source, target.id);
+      this.notifyPluginsChanged();
     });
 
     watcher.on('add', async (filePath: string) => {
@@ -564,6 +584,7 @@ export class PluginManager {
       if (!target) return;
       Logger.log('PluginManager', `New plugin: ${target.id}, loading...`);
       await this.loadPlugin(target.entryPath, source, target.id);
+      this.notifyPluginsChanged();
     });
 
     watcher.on('unlink', async (filePath: string) => {
@@ -573,6 +594,7 @@ export class PluginManager {
       if (segments.length === 1) {
         if (!exts.some((e) => segments[0].toLowerCase().endsWith(e))) return;
         await this.unloadPlugin(stripPluginExt(segments[0]));
+        this.notifyPluginsChanged();
         return;
       }
       // A module file inside a directory plugin was removed: reload the plugin
@@ -581,6 +603,7 @@ export class PluginManager {
       const entryPath = this.findDirPluginEntry(join(dir, id), exts);
       if (entryPath) await this.loadPlugin(entryPath, source, id);
       else await this.unloadPlugin(id);
+      this.notifyPluginsChanged();
     });
 
     return watcher;

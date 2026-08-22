@@ -63,8 +63,56 @@ function resolveLogoFileUrl() {
 
 // ── Loading screen (inline HTML — no file deps) ──────────────────────────────
 
+// Blocking sleep — startProxy runs before the window exists, so there's nothing
+// to keep responsive, and the port must be free before we spawn.
+function sleepSync(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+// Linux/macOS counterpart to the netstat scan below. Without this the whole
+// stale-proxy cleanup was a no-op off Windows, so on Linux/Steam Deck a
+// leftover proxy kept port 4440 and the new window silently attached to it
+// (see cleanupStaleDevProxyProcesses).
+function getListeningPidsForPortPosix(port) {
+  const probes = [
+    // `ss` prints users:(("node",pid=1234,fd=31)) on the listening row.
+    { cmd: 'ss', args: ['-tlnpH'], extract: (out) => matchPidsInSocketDump(out, port, /pid=(\d+)/g) },
+    { cmd: 'lsof', args: ['-nP', '-iTCP:' + port, '-sTCP:LISTEN', '-t'], extract: (out) => out.split(/\s+/) },
+    { cmd: 'fuser', args: [String(port) + '/tcp'], extract: (out) => out.split(/\s+/) },
+  ];
+  for (const probe of probes) {
+    try {
+      const out = execFileSync(probe.cmd, probe.args, { encoding: 'utf8', timeout: 2500 });
+      const pids = probe
+        .extract(String(out || ''))
+        .map((v) => Number(v))
+        .filter((pid) => Number.isFinite(pid) && pid > 0);
+      if (pids.length) return Array.from(new Set(pids));
+    } catch {
+      // Tool missing or returned non-zero (no listener) — try the next one.
+    }
+  }
+  return [];
+}
+
+// Pull PIDs out of an `ss` dump, keeping only rows whose local address ends in
+// `:<port>` so a client socket to some other service can't be matched.
+function matchPidsInSocketDump(out, port, pidPattern) {
+  const pids = [];
+  const portPattern = new RegExp(':' + String(port) + '$');
+  for (const line of out.split(/\r?\n/)) {
+    const parts = line.trim().split(/\s+/);
+    // ss -tlnpH columns: State Recv-Q Send-Q Local:Port Peer:Port Process
+    if (parts.length < 5 || !portPattern.test(parts[3] || '')) continue;
+    let m;
+    pidPattern.lastIndex = 0;
+    while ((m = pidPattern.exec(line)) !== null) pids.push(m[1]);
+  }
+  return pids;
+}
+
 function getListeningPidsForPort(port) {
-  if (process.platform !== 'win32') return [];
+  if (process.platform !== 'win32') return getListeningPidsForPortPosix(port);
   try {
     const out = execFileSync('netstat.exe', ['-ano', '-p', 'tcp'], {
       encoding: 'utf8',
@@ -95,8 +143,85 @@ function getListeningPidsForPort(port) {
   }
 }
 
+// True when `cmd` is one of our own proxy processes for this workspace — either
+// the dev proxy (tsx src/index.ts --dev) or the packaged one (dist/app.cjs).
+// Matching on the workspace path keeps us from killing an unrelated node app
+// that merely happens to hold the port.
+function isRealmProxyCommandLine(cmd, projectRoot) {
+  const lower = String(cmd || '').toLowerCase();
+  const slash = lower.replace(/\\/g, '/');
+  const rootA = String(projectRoot || '').toLowerCase();
+  const rootB = rootA.replace(/\\/g, '/');
+  const sameWorkspace = (rootA && lower.includes(rootA)) || (rootB && slash.includes(rootB));
+  if (!sameWorkspace) return false;
+  const isDevProxy = lower.includes('--dev') && slash.includes('src/index.ts');
+  const isProdProxy = slash.includes('dist/app.cjs');
+  return isDevProxy || isProdProxy;
+}
+
+// POSIX cleanup: read each candidate's command line (/proc on Linux, `ps` on
+// macOS) and terminate the ones that are ours. SIGTERM first so the proxy can
+// run its shutdown hook (it removes version.dll from the game dir), then
+// SIGKILL anything still alive.
+function cleanupStaleDevProxyProcessesPosix(projectRoot, pids) {
+  for (const pid of pids) {
+    if (pid === process.pid) continue;
+    let cmd = '';
+    try {
+      cmd = fs.readFileSync('/proc/' + pid + '/cmdline', 'utf8').replace(/\0/g, ' ').trim();
+    } catch {
+      try {
+        cmd = String(execFileSync('ps', ['-o', 'command=', '-p', String(pid)], {
+          encoding: 'utf8',
+          timeout: 2500,
+        })).trim();
+      } catch {
+        continue;
+      }
+    }
+    if (!isRealmProxyCommandLine(cmd, projectRoot)) {
+      console.warn(
+        '[Electron] Port ' + DASHBOARD_PORT + ' is held by PID ' + pid +
+        ' which is not a Realm Engine proxy — leaving it alone: ' + cmd.slice(0, 120),
+      );
+      continue;
+    }
+    try {
+      console.log('[Electron] Removing stale Realm Engine proxy PID', pid);
+      process.kill(pid, 'SIGTERM');
+    } catch (err) {
+      console.warn('[Electron] Failed to signal stale proxy PID ' + pid + ':', err.message);
+      continue;
+    }
+    // Give the shutdown hook a moment, then make sure it's really gone —
+    // a survivor would keep the port and re-trigger the stale-instance bug.
+    const deadline = Date.now() + 3000;
+    while (Date.now() < deadline) {
+      try {
+        process.kill(pid, 0);
+      } catch {
+        break; // gone
+      }
+      sleepSync(100);
+    }
+    try {
+      process.kill(pid, 0);
+      process.kill(pid, 'SIGKILL');
+      console.log('[Electron] Force-killed stale Realm Engine proxy PID', pid);
+    } catch {
+      // Already exited.
+    }
+  }
+}
+
 function cleanupStaleDevProxyProcesses(projectRoot, candidatePids = []) {
-  if (process.platform !== 'win32') return;
+  if (process.platform !== 'win32') {
+    const posixPids = (Array.isArray(candidatePids) ? candidatePids : [])
+      .map((pid) => Number(pid))
+      .filter((pid) => Number.isFinite(pid) && pid > 0);
+    if (posixPids.length) cleanupStaleDevProxyProcessesPosix(projectRoot, posixPids);
+    return;
+  }
   const pids = Array.isArray(candidatePids)
     ? candidatePids.filter((pid) => Number.isFinite(Number(pid)) && Number(pid) > 0)
     : [];
@@ -288,6 +413,12 @@ function startProxy() {
   const distApp = path.join(projectRoot, 'dist', 'app.cjs');
   const isProd = app.isPackaged && fs.existsSync(distApp);
 
+  // A proxy left over from a previous launch keeps port 4440, which used to
+  // leave the new proxy half-dead (its dashboard bind fails) while this window
+  // silently attached to the stale one — the "plugins load forever" symptom.
+  // Both modes need this, not just dev.
+  cleanupStaleDevProxyProcesses(projectRoot, getListeningPidsForPort(DASHBOARD_PORT));
+
   if (isProd) {
     console.log('[Electron] Starting proxy (production mode)');
     const realRoot = process.resourcesPath;
@@ -323,7 +454,6 @@ function startProxy() {
     }
   } else {
     console.log('[Electron] Starting proxy (dev mode)');
-    cleanupStaleDevProxyProcesses(projectRoot, getListeningPidsForPort(DASHBOARD_PORT));
     const tsxCli = path.join(projectRoot, 'node_modules', 'tsx', 'dist', 'cli.mjs');
     const nodeExe = process.env.npm_node_execpath || process.env.NODE || 'node';
     proxyProcess = spawn(nodeExe, [tsxCli, path.join(projectRoot, 'src', 'index.ts'), '--dev'], {

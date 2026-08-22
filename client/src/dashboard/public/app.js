@@ -605,6 +605,46 @@ import { NOISY_PACKETS, MAX_ROWS, MAX_PLUGIN_LOGS, CLASS_NAMES, CLASS_COLORS, SK
   const hotkeysTableBody = document.getElementById('hotkeys-table-body');
   const hotkeysStatus = document.getElementById('hotkeys-status');
   let pluginsReceived = false;
+  // The server answers with an empty list while plugins are still loading, so an
+  // empty response alone can't distinguish "still starting" from "broken". This
+  // watchdog draws the line: after PLUGINS_STALL_MS with nothing, we stop
+  // spinning and tell the user what to check.
+  const PLUGINS_STALL_MS = 20000;
+  let pluginsStalled = false;
+  let pluginsWatchdogTimer = null;
+
+  function notePluginsResponse(count) {
+    if (count > 0) {
+      pluginsReceived = true;
+      pluginsStalled = false;
+      if (pluginsWatchdogTimer) { clearTimeout(pluginsWatchdogTimer); pluginsWatchdogTimer = null; }
+      return;
+    }
+    if (pluginsReceived || pluginsStalled || pluginsWatchdogTimer) return;
+    pluginsWatchdogTimer = setTimeout(function () {
+      pluginsWatchdogTimer = null;
+      if (pluginsReceived) return;
+      pluginsStalled = true;
+      renderPlugins(Array.isArray(allPluginsData) ? allPluginsData : []);
+    }, PLUGINS_STALL_MS);
+  }
+
+  function retryPluginFetch() {
+    fetch('/api/plugins')
+      .then(function (r) { if (!r.ok) throw new Error('bad status'); return r.json(); })
+      .then(function (data) {
+        var pl = Array.isArray(data) ? data : [];
+        notePluginsResponse(pl.length);
+        allPluginsData = pl;
+        renderPlugins(pl);
+        populateServerSelect(pl);
+        renderDamageSettings(pl);
+      })
+      .catch(function () {
+        pluginsStalled = true;
+        renderPlugins(Array.isArray(allPluginsData) ? allPluginsData : []);
+      });
+  }
   const accountsSearchInput = document.getElementById('accounts-search');
   const accountsCountEl = document.getElementById('accounts-count');
   const accountsSortEl = document.getElementById('accounts-sort');
@@ -3601,12 +3641,14 @@ import { NOISY_PACKETS, MAX_ROWS, MAX_PLUGIN_LOGS, CLASS_NAMES, CLASS_COLORS, SK
           break;
         case 'plugins': {
           var pl = Array.isArray(msg.data) ? msg.data : [];
-          if (pl.length > 0) pluginsReceived = true;
+          notePluginsResponse(pl.length);
           allPluginsData = pl;
-          renderPlugins(pl);
-          if (activeTab === 'hotkeys') renderHotkeysTab();
-          populateServerSelect(pl);
-          renderDamageSettings(pl);
+          // Guarded individually: a throw in any one of these used to abort the
+          // whole handler and leave the loading spinner up permanently.
+          try { renderPlugins(pl); } catch (e) { console.error('renderPlugins failed', e); }
+          try { if (activeTab === 'hotkeys') renderHotkeysTab(); } catch (e) { console.error('renderHotkeysTab failed', e); }
+          try { populateServerSelect(pl); } catch (e) { console.error('populateServerSelect failed', e); }
+          try { renderDamageSettings(pl); } catch (e) { console.error('renderDamageSettings failed', e); }
           break;
         }
         case 'pluginHotkeyUpdateError':
@@ -6744,7 +6786,31 @@ import { NOISY_PACKETS, MAX_ROWS, MAX_PLUGIN_LOGS, CLASS_NAMES, CLASS_COLORS, SK
     if (visiblePlugins.length === 0) {
       sideEl.innerHTML = '';
       detailEl.innerHTML = '';
-      if (!pluginsReceived) {
+      if (!pluginsReceived && pluginsStalled) {
+        // Nothing arrived within the watchdog window. Almost always this means
+        // the window is talking to a stale Realm Engine process that still holds
+        // port 4440 — so say that, instead of spinning forever.
+        var stalled = document.createElement('div');
+        stalled.className = 'plugin-detail-empty';
+        var stalledMsg = document.createElement('div');
+        stalledMsg.textContent = 'No plugins were reported by the proxy.';
+        var stalledHint = document.createElement('div');
+        stalledHint.style.opacity = '0.75';
+        stalledHint.style.marginTop = '8px';
+        stalledHint.style.fontSize = '12px';
+        stalledHint.textContent =
+          'The proxy may have failed to start, or another Realm Engine instance is still running '
+          + 'and holding port 4440. Close any other instance, then restart Realm Engine.';
+        var retryBtn = document.createElement('button');
+        retryBtn.className = 'btn';
+        retryBtn.style.marginTop = '12px';
+        retryBtn.textContent = 'Retry';
+        retryBtn.addEventListener('click', retryPluginFetch);
+        stalled.appendChild(stalledMsg);
+        stalled.appendChild(stalledHint);
+        stalled.appendChild(retryBtn);
+        detailEl.appendChild(stalled);
+      } else if (!pluginsReceived) {
         var skeletons = document.createElement('div');
         skeletons.className = 'plugin-sidebar-loading';
         for (var sk = 0; sk < 6; sk++) {
@@ -8908,7 +8974,7 @@ import { NOISY_PACKETS, MAX_ROWS, MAX_PLUGIN_LOGS, CLASS_NAMES, CLASS_COLORS, SK
         })
         .then(function (data) {
           var pl = Array.isArray(data) ? data : [];
-          if (pl.length > 0) pluginsReceived = true;
+          notePluginsResponse(pl.length);
           allPluginsData = pl;
           renderPlugins(pl);
           populateServerSelect(pl);
@@ -8925,7 +8991,7 @@ import { NOISY_PACKETS, MAX_ROWS, MAX_PLUGIN_LOGS, CLASS_NAMES, CLASS_COLORS, SK
         })
         .then(function (data) {
           var pl = Array.isArray(data) ? data : [];
-          if (pl.length > 0) pluginsReceived = true;
+          notePluginsResponse(pl.length);
           allPluginsData = pl;
           renderPlugins(pl);
           renderHotkeysTab();
