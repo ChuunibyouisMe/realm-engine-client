@@ -217,7 +217,8 @@ void Render()
 
         ImGui::PushItemWidth(180.f);
         float reach = SafeZoneMap::GetMaxReachTiles();
-        if (ImGui::SliderFloat("Max reach (tiles)##szmReach", &reach, 2.f, 20.f, "%.0f"))
+        // Upper bound matches the field's half-extent; past that there is no data.
+        if (ImGui::SliderFloat("Max reach (tiles)##szmReach", &reach, 2.f, 14.f, "%.0f"))
             SafeZoneMap::SetMaxReachTiles(reach);
 
         float opacity = SafeZoneMap::GetOpacity();

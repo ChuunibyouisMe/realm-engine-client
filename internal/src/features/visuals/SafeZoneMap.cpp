@@ -19,6 +19,7 @@
 #include <cfloat>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 #include <vector>
 
 namespace {
@@ -26,10 +27,15 @@ namespace {
 // ── Field geometry ───────────────────────────────────────────────────────────
 // A player-centred window at half-tile resolution. 40x40 tiles comfortably
 // covers the visible play area at normal zoom.
-constexpr float kHalfExtentTiles = 20.f;
-constexpr float kCellTiles       = 0.5f;
-constexpr int   kGridDim         = static_cast<int>((kHalfExtentTiles * 2.f) / kCellTiles); // 80
-constexpr int   kCellCount       = kGridDim * kGridDim;                                     // 6400
+// Quarter-tile cells. At half a tile the grid could not represent a gap
+// narrower than itself, so genuinely safe slots between two shots quantised
+// away entirely. The window shrinks from 40 to 28 tiles to pay for the extra
+// resolution — reach is ~9 tiles, so most of the old field was cells that could
+// never be drawn anyway. Net cost is about twice the cells for twice the detail.
+constexpr float kHalfExtentTiles = 14.f;
+constexpr float kCellTiles       = 0.25f;
+constexpr int   kGridDim         = static_cast<int>((kHalfExtentTiles * 2.f) / kCellTiles); // 112
+constexpr int   kCellCount       = kGridDim * kGridDim;                                     // 12544
 
 // Nothing reaches this cell within the horizon.
 constexpr float kSafe = FLT_MAX;
@@ -70,6 +76,9 @@ static float     s_field[kCellCount];
 // what separates a pocket you can actually steer into from a hitbox-width slot
 // that is only theoretically survivable.
 static float     s_clearance[kCellCount];
+// Does this cell belong to a pocket worth showing at all? Deliberately separate
+// from clearance — see the flood fill in Rebuild().
+static uint8_t   s_pocketOk[kCellCount];
 static float     s_originX = 0.f, s_originY = 0.f;  // world pos of cell (0,0) corner
 static bool      s_haveField = false;
 static ULONGLONG s_lastBuildMs = 0;
@@ -273,10 +282,60 @@ static void Rebuild(float px, float py)
     for (int i = 0; i < kCellCount; ++i)
         if (s_clearance[i] < kFar) s_clearance[i] *= kCellTiles;
 
+    // ── Pocket qualification ─────────────────────────────────────────────────
+    // Clearance decides whether a *pocket* is worth showing. It must not also
+    // decide which cells of that pocket get drawn — testing every cell against
+    // the margin did both, which shaved the margin off every edge, pulled the
+    // green back from the bullets bounding it, and erased narrow gaps that were
+    // perfectly safe to stand in.
+    //
+    // Flood fill each connected region of safe cells instead: if any cell in it
+    // clears the margin, draw the whole region, right up to the bullets. Regions
+    // too tight to steer into anywhere along their length are dropped entirely,
+    // which is all the margin was ever meant to do.
     const float comfort = s_comfortTiles.load(std::memory_order_relaxed);
+    static std::vector<int> stack;
+    static std::vector<int> component;
+    static uint8_t visited[kCellCount];
+    memset(s_pocketOk, 0, sizeof(s_pocketOk));
+    memset(visited, 0, sizeof(visited));
+
     int safeCells = 0;
-    for (int i = 0; i < kCellCount; ++i)
-        if (s_field[i] == kSafe && s_clearance[i] >= comfort) ++safeCells;
+    for (int seed = 0; seed < kCellCount; ++seed) {
+        if (visited[seed] || s_field[seed] != kSafe) continue;
+
+        stack.clear();
+        component.clear();
+        stack.push_back(seed);
+        visited[seed] = 1;
+        float best = 0.f;
+
+        while (!stack.empty()) {
+            const int idx = stack.back();
+            stack.pop_back();
+            component.push_back(idx);
+            if (s_clearance[idx] > best) best = s_clearance[idx];
+
+            const int qx = idx % kGridDim;
+            const int qy = idx / kGridDim;
+            const int nb[4] = {
+                (qx > 0)             ? idx - 1        : -1,
+                (qx + 1 < kGridDim)  ? idx + 1        : -1,
+                (qy > 0)             ? idx - kGridDim : -1,
+                (qy + 1 < kGridDim)  ? idx + kGridDim : -1,
+            };
+            for (int n : nb) {
+                if (n < 0 || visited[n] || s_field[n] != kSafe) continue;
+                visited[n] = 1;
+                stack.push_back(n);
+            }
+        }
+
+        if (best >= comfort) {
+            for (int idx : component) s_pocketOk[idx] = 1;
+            safeCells += static_cast<int>(component.size());
+        }
+    }
 
     LARGE_INTEGER t1, freq;
     QueryPerformanceCounter(&t1);
@@ -409,7 +468,6 @@ void Render()
     // merged 2x2 cells and filled them with soft alpha, which is what made the
     // overlay read like watercolour — adjacent quads blended into blobs several
     // times wider than the bullets they represented.
-    const float comfort   = s_comfortTiles.load(std::memory_order_relaxed);
     const float dangerWin = s_dangerWindowMs.load(std::memory_order_relaxed);
     const Style style     = static_cast<Style>(s_style.load(std::memory_order_relaxed));
     const bool  drawFill  = (style != Style::OutlineOnly);
@@ -460,8 +518,8 @@ void Render()
 
             const float v = s_field[i];
             if (v == kSafe) {
-                // Only pockets with room to actually steer into.
-                s_class[i] = (s_clearance[i] >= comfort) ? 1 : 0;
+                // Whole pocket or none of it; qualification happened at rebuild.
+                s_class[i] = s_pocketOk[i] ? 1 : 0;
             } else {
                 // Danger is painted only inside its own, much shorter window.
                 s_class[i] = (showDanger && v <= dangerWin) ? 2 : 0;
