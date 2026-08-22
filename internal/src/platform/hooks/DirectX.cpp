@@ -330,12 +330,14 @@ HRESULT __stdcall dPresent(IDXGISwapChain* __this, UINT SyncInterval, UINT Flags
 
 		ImGui::GetIO().MouseDrawCursor = settings.bShowMenu;
 
-		// Toggle menu on multiple standard keybinds (Tab, Insert, F1, F11, ~).
+		// Toggle menu on multiple standard keybinds (Insert, F1, F11).
+		// '~' (0xC0) used to be in this list; it is now the default bind for the
+		// safe-zone heatmap, and leaving it here would fire both on one press.
+		// Four ways into the menu remain.
 		if (KeyBinds::IsKeyPressed(settings.KeyBinds.Toggle_Menu) ||
 		    KeyBinds::IsKeyPressed(VK_INSERT) ||
 		    KeyBinds::IsKeyPressed(VK_F1) ||
-		    KeyBinds::IsKeyPressed(VK_F11) ||
-		    KeyBinds::IsKeyPressed(0xC0)) {
+		    KeyBinds::IsKeyPressed(VK_F11)) {
 			settings.bShowMenu = !settings.bShowMenu;
 		}
 

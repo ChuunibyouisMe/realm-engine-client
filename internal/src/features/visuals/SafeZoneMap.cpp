@@ -9,6 +9,8 @@
 #include "gui/tabs/TestTAB.h"
 #include "features/movement/dodge/ProjectileTracking.h"
 #include "features/projectiles/ProjectileTrajectory.h"
+#include "core/config/settings.h"
+#include "core/config/keybinds.h"
 
 #include <windows.h>
 #include <imgui/imgui.h>
@@ -318,8 +320,28 @@ int   GetThreatCount()  { return s_threatCount.load(std::memory_order_relaxed); 
 float GetLastBuildUs()  { return s_lastBuildUs.load(std::memory_order_relaxed); }
 int   GetSafeCellCount(){ return s_safeCells.load(std::memory_order_relaxed); }
 
+// GetAsyncKeyState is process-wide, so gate on the game actually having focus —
+// otherwise a '`' typed into the dashboard or a browser would toggle the overlay.
+static bool GameWindowFocused()
+{
+    const HWND fg = GetForegroundWindow();
+    if (!fg) return false;
+    DWORD pid = 0;
+    GetWindowThreadProcessId(fg, &pid);
+    return pid == GetCurrentProcessId();
+}
+
+void PollHotkey()
+{
+    const uint8_t key = settings.KeyBinds.Toggle_SafeZones;
+    if (key == 0 || !GameWindowFocused()) return;
+    if (KeyBinds::IsKeyPressed(key))
+        SetEnabled(!IsEnabled());
+}
+
 void Tick()
 {
+    PollHotkey();
     if (!s_enabled.load(std::memory_order_relaxed)) { s_haveField = false; return; }
 
     const ULONGLONG now = GetTickCount64();

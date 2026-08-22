@@ -28,6 +28,7 @@ static const std::map<uint8_t, const char*> KeyMap = {
 	{0x2D, "INS"},
 	{0x2E, "DEL"},
 	{0x2C, "PRNTSCR"},
+	{0xC0, "`"},
 	{0x30, "0"},
 	{0x31, "1"},
 	{0x32, "2"},

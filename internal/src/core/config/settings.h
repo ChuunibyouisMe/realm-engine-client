@@ -6,7 +6,8 @@ class Settings {
 public:
  KeyBinds::Config KeyBinds = {
  VK_INSERT, // toggle menu
- 0x30       // toggle auto aim — the '0' key (KeyBinds::KeyMap entry "0")
+ 0x30,      // toggle auto aim — the '0' key (KeyBinds::KeyMap entry "0")
+ 0xC0       // toggle safe-zone heatmap — the '`' key (VK_OEM_3)
  };
 
  bool ImGuiInitialized = false;

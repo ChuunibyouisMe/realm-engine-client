@@ -54,6 +54,10 @@ float GetMaxReachTiles();
 // Effective reach used by the last render (min of the cap and speed x horizon).
 float GetEffectiveReachTiles();
 
+// Edge-detects the configured toggle key. Called from Tick(); exposed so the
+// binding UI can share the same entry point.
+void PollHotkey();
+
 // Rebuild the field (self-throttled) — call once per frame from dPresent.
 void Tick();
 

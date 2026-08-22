@@ -1,5 +1,7 @@
 #include "pch-il2cpp.h"
 #include "features/visuals/SafeZoneMap.h"
+#include "core/config/keybinds.h"
+#include "core/config/settings.h"
 #include "VisualsTAB.h"
 #include "WorldTAB.h"
 #include <imgui/imgui.h>
@@ -125,6 +127,33 @@ void Render()
         bool enabled = SafeZoneMap::IsEnabled();
         if (ImGui::Checkbox("Enable##szmEnable", &enabled))
             SafeZoneMap::SetEnabled(enabled);
+
+        // Rebindable toggle, mirroring the Auto Aim key capture.
+        ImGui::SameLine();
+        static bool s_capturingSzmKey = false;
+        char szmKeyLabel[48];
+        if (s_capturingSzmKey)
+            snprintf(szmKeyLabel, sizeof(szmKeyLabel), "[ Press Key ]##szmKey");
+        else if (settings.KeyBinds.Toggle_SafeZones != 0)
+            snprintf(szmKeyLabel, sizeof(szmKeyLabel), "[ Key: %s ]##szmKey",
+                     KeyBinds::ToString(settings.KeyBinds.Toggle_SafeZones));
+        else
+            snprintf(szmKeyLabel, sizeof(szmKeyLabel), "[ Key: None ]##szmKey");
+
+        ImGui::PushStyleColor(ImGuiCol_Button, s_capturingSzmKey
+            ? ImVec4(0.5f, 0.2f, 0.2f, 1.0f) : ImVec4(0.2f, 0.25f, 0.3f, 0.85f));
+        if (ImGui::Button(szmKeyLabel)) s_capturingSzmKey = !s_capturingSzmKey;
+        ImGui::PopStyleColor();
+
+        if (s_capturingSzmKey) {
+            for (uint8_t k : KeyBinds::GetValidKeys()) {
+                if (KeyBinds::IsKeyPressed(k)) {
+                    settings.KeyBinds.Toggle_SafeZones = (k == VK_ESCAPE) ? 0 : k;
+                    s_capturingSzmKey = false;
+                    break;
+                }
+            }
+        }
 
         bool showDanger = SafeZoneMap::IsShowDanger();
         if (ImGui::Checkbox("Also shade danger##szmDanger", &showDanger))

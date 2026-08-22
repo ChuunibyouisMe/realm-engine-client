@@ -8,6 +8,7 @@ namespace KeyBinds {
     struct Config {
         uint8_t Toggle_Menu;
         uint8_t Toggle_AutoAim;
+        uint8_t Toggle_SafeZones;
     };
 
     void WndProc(UINT uMsg, WPARAM wParam, LPARAM lParam);
