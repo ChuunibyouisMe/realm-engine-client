@@ -434,7 +434,11 @@ void Render()
             const int i = cy * kGridDim + cx;
             const float wx = s_originX + (static_cast<float>(cx) + 0.5f) * kCellTiles;
             const float ddx = wx - pxNow;
-            if (ddx * ddx + ddy * ddy > reachSq) { s_class[i] = 0; continue; }
+            // 3 = outside reach. Kept distinct from 0 so the contour pass can
+            // tell "there is nothing here" from "we simply stopped looking":
+            // outlining the latter drew a meaningless arc around the reach
+            // radius wherever a safe region ran past it.
+            if (ddx * ddx + ddy * ddy > reachSq) { s_class[i] = 3; continue; }
 
             const float v = s_field[i];
             if (v == kSafe) {
@@ -470,7 +474,7 @@ void Render()
             const float wy = s_originY + (static_cast<float>(cyi) + 0.5f) * kCellTiles;
             for (int cxi = 0; cxi < kGridDim; ++cxi) {
                 const uint8_t k = s_class[cyi * kGridDim + cxi];
-                if (!k) continue;
+                if (k != 1 && k != 2) continue;
                 const float wx = s_originX + (static_cast<float>(cxi) + 0.5f) * kCellTiles;
 
                 ImU32 col;
@@ -515,19 +519,22 @@ void Render()
         for (int cyi = 0; cyi < kGridDim; ++cyi) {
             for (int cxi = 0; cxi < kGridDim; ++cxi) {
                 const uint8_t k = s_class[cyi * kGridDim + cxi];
-                const uint8_t kr = (cxi + 1 < kGridDim) ? s_class[cyi * kGridDim + (cxi + 1)] : 0;
-                const uint8_t kd = (cyi + 1 < kGridDim) ? s_class[(cyi + 1) * kGridDim + cxi] : 0;
+                // Off-grid counts as out-of-reach for the same reason: the
+                // window edge is an artefact of how far we look, not a real
+                // boundary between safe and unsafe ground.
+                const uint8_t kr = (cxi + 1 < kGridDim) ? s_class[cyi * kGridDim + (cxi + 1)] : 3;
+                const uint8_t kd = (cyi + 1 < kGridDim) ? s_class[(cyi + 1) * kGridDim + cxi] : 3;
 
                 const float x0 = s_originX + static_cast<float>(cxi) * kCellTiles;
                 const float y0 = s_originY + static_cast<float>(cyi) * kCellTiles;
                 const float x1 = x0 + kCellTiles;
                 const float y1 = y0 + kCellTiles;
 
-                if (k != kr) {
+                if (k != kr && k != 3 && kr != 3) {
                     const uint8_t owner = k ? k : kr;
                     edge(x1, y0, x1, y1, owner == 1 ? colSafe : colDanger);
                 }
-                if (k != kd) {
+                if (k != kd && k != 3 && kd != 3) {
                     const uint8_t owner = k ? k : kd;
                     edge(x0, y1, x1, y1, owner == 1 ? colSafe : colDanger);
                 }
