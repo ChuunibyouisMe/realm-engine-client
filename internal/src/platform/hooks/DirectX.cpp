@@ -16,6 +16,7 @@
 #include <thread>
 #include "Il2CppResolver.h"
 #include "AutoAim.h"
+#include "features/visuals/SafeZoneMap.h"
 #include "RuntimeOffsets.h"
 #include "BootGate.h"
 #include "DiagBridge.h"
@@ -202,6 +203,12 @@ HRESULT __stdcall dPresent(IDXGISwapChain* __this, UINT SyncInterval, UINT Flags
 		DiagBridge::Tick();      // mirror live state to %LOCALAPPDATA%\RealmEngine\diag.json
 	});
 
+	// Safe-zone heatmap: rebuild is self-throttled, and it only reads projectile
+	// state — nothing is sent to the server and no input is synthesised.
+	Resolver::Protection::safe_call([&]() {
+		SafeZoneMap::Tick();
+	});
+
 	// Own safe_call on purpose. Sharing the block above meant an SEH fault in any
 	// earlier Tick aborted the whole lambda and silently skipped auto-aim — and if
 	// that fault repeated every frame, aim stopped updating for good while the
@@ -335,6 +342,8 @@ HRESULT __stdcall dPresent(IDXGISwapChain* __this, UINT SyncInterval, UINT Flags
 		// Run per-frame logic safely.
 		Resolver::Protection::safe_call([&]() {
 			TestTAB::Tick(settings.bShowMenu);
+			// After TestTAB::Tick — it publishes the camera basis this uses.
+			SafeZoneMap::Render();
 			VisualsTAB::Tick(settings.bShowMenu);
 			CombatTAB::Tick(settings.bShowMenu);
 			PlayerTAB::Tick(settings.bShowMenu);

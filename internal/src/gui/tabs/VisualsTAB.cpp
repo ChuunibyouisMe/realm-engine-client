@@ -1,4 +1,5 @@
 #include "pch-il2cpp.h"
+#include "features/visuals/SafeZoneMap.h"
 #include "VisualsTAB.h"
 #include "WorldTAB.h"
 #include <imgui/imgui.h>
@@ -114,6 +115,47 @@ void Tick(bool /*menuVisible*/)
 
 void Render()
 {
+    // ── Safe-zone heatmap ────────────────────────────────────────────────────
+    ImGui::TextColored(ImVec4(0.5f, 0.95f, 0.65f, 1.f), "SAFE ZONE HEATMAP");
+    ImGui::TextWrapped(
+        "Shades ground by how long until an in-flight shot reaches it. "
+        "Green = nothing incoming within the horizon. Read-only: it never moves "
+        "your character, so there is nothing for other players to notice.");
+    {
+        bool enabled = SafeZoneMap::IsEnabled();
+        if (ImGui::Checkbox("Enable##szmEnable", &enabled))
+            SafeZoneMap::SetEnabled(enabled);
+
+        bool showDanger = SafeZoneMap::IsShowDanger();
+        if (ImGui::Checkbox("Also shade danger##szmDanger", &showDanger))
+            SafeZoneMap::SetShowDanger(showDanger);
+        ImGui::SameLine(); ImGui::TextDisabled("(?)");
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Off = only safe ground is tinted, which is much calmer to read\nin a dense bullet pattern.");
+
+        float horizon = SafeZoneMap::GetHorizonMs();
+        ImGui::PushItemWidth(180.f);
+        if (ImGui::SliderFloat("Look ahead (ms)##szmHorizon", &horizon, 300.f, 4000.f, "%.0f"))
+            SafeZoneMap::SetHorizonMs(horizon);
+
+        float opacity = SafeZoneMap::GetOpacity();
+        if (ImGui::SliderFloat("Opacity##szmOpacity", &opacity, 0.f, 1.f, "%.2f"))
+            SafeZoneMap::SetOpacity(opacity);
+        ImGui::PopItemWidth();
+
+        if (SafeZoneMap::IsEnabled()) {
+            ImGui::TextDisabled("shots folded in: %d   safe cells: %d   rebuild: %.0f us",
+                                SafeZoneMap::GetThreatCount(),
+                                SafeZoneMap::GetSafeCellCount(),
+                                static_cast<double>(SafeZoneMap::GetLastBuildUs()));
+            ImGui::TextDisabled("Only knows shots already fired — an enemy that has not");
+            ImGui::TextDisabled("fired yet can still shoot into green ground.");
+        }
+    }
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+
     void* lp = WorldTAB::GetLocalPtr();
     const bool haveLocal = (lp != nullptr && AddrValid(lp));
 

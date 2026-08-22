@@ -52,6 +52,8 @@ static constexpr float kCtrlTeleportMaxTiles = 2.0f;
 static float g_mouseWorldX  = 0.f, g_mouseWorldY  = 0.f;
 static float g_mouseSX      = 0.f, g_mouseSY      = 0.f;
 static bool  g_w2sValid     = false;
+static float g_camStateX = 0.f, g_camStateY = 0.f, g_camStateAngle = 0.f;
+static float g_camStateZoom = 0.f, g_camStateCx = 0.f, g_camStateCy = 0.f;
 
 static bool  g_basisMeasured = false;
 static bool  g_useMeasuredBasis = true;
@@ -697,6 +699,9 @@ void TestTAB::Tick(bool menuVisible)
     float cx = 0.f, cy = 0.f, screenW = 0.f, screenH = 0.f;
     g_w2sValid = BuildCamState(camX, camY, angleRad, zoom, cx, cy, screenW, screenH);
     g_dbgCx = cx; g_dbgCy = cy; g_dbgZoom = zoom; g_dbgAngleRad = angleRad;
+    // Published for overlays that project their own geometry (SafeZoneMap).
+    g_camStateX = camX; g_camStateY = camY; g_camStateAngle = angleRad;
+    g_camStateZoom = zoom; g_camStateCx = cx; g_camStateCy = cy;
 
     // ── Mouse position (screen coords, relative to game client area) ────────
     POINT pt;
@@ -1542,6 +1547,14 @@ void TestTAB::Render()
 namespace TestTAB {
 
     bool  IsW2SValid()        { return g_w2sValid; }
+    bool GetCamState(float& camX, float& camY, float& angleRad,
+                     float& zoom, float& cx, float& cy)
+    {
+        if (!g_w2sValid) return false;
+        camX = g_camStateX; camY = g_camStateY; angleRad = g_camStateAngle;
+        zoom = g_camStateZoom; cx = g_camStateCx; cy = g_camStateCy;
+        return true;
+    }
     float GetMouseWorldX()    { return g_mouseWorldX; }
     float GetMouseWorldY()    { return g_mouseWorldY; }
     float GetMouseScreenX()   { return g_mouseSX; }

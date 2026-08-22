@@ -33,6 +33,10 @@ bool      IsAnyAutoDodgeEnabled();
 
     // W2S state accessors — updated every frame in Tick().
     bool  IsW2SValid();
+    // Last camera basis computed in Tick(), for overlays that project world
+    // geometry themselves. Returns false until the first valid frame.
+    bool  GetCamState(float& camX, float& camY, float& angleRad,
+                      float& zoom, float& cx, float& cy);
     float GetMouseWorldX();
     float GetMouseWorldY();
     float GetMouseScreenX();
