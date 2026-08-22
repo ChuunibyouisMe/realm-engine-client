@@ -260,6 +260,13 @@ static ULONGLONG             s_lastTickMs = 0;
 // Guards s_snapshot and s_velMap. Contention is negligible: the render thread
 // rebuilds at most every 8 ms and the shot hook only runs when you fire.
 static SRWLOCK s_lock = SRWLOCK_INIT;
+// Rebuild interval. Enemy positions only change on server ticks (~115-290 ms),
+// so the old 8 ms (125 Hz) walked the 4096-slot world dictionary far more often
+// than the data could possibly change. 16 ms halves that work with no loss of
+// fidelity — velocity is estimated from actual position changes, not poll rate.
+static constexpr ULONGLONG kSnapshotIntervalMs = 16;
+// Bumped on every actual rebuild so consumers can cache their own copy.
+static std::atomic<uint32_t> s_generation{ 0 };
 
 } // namespace
 
@@ -271,7 +278,7 @@ void Tick()
     // a frame, and bounds the world-dict walk to ~125 Hz. On a throttled call the
     // previous snapshot (≤8 ms old) is kept rather than cleared.
     const ULONGLONG now = GetTickCount64();
-    if (now - s_lastTickMs < 8ULL) return;
+    if (now - s_lastTickMs < kSnapshotIntervalMs) return;
     s_lastTickMs = now;
 
     s_snapshot.clear();
@@ -358,6 +365,8 @@ void Tick()
         s_snapshot.push_back(e);
     }
 
+    s_generation.fetch_add(1, std::memory_order_relaxed);
+
     // Prune stale velocity entries every 5 seconds
     if (now >= s_pruneAt) {
         s_pruneAt = now + 5000ULL;
@@ -381,15 +390,31 @@ int32_t GetLocalPlayerObjectId()
     return s_localPlayerObjectId.load(std::memory_order_relaxed);
 }
 
-void Acquire() { AcquireSRWLockExclusive(&s_lock); }
-void Release() { ReleaseSRWLockExclusive(&s_lock); }
+uint32_t Generation() { return s_generation.load(std::memory_order_relaxed); }
 
-void CopySnapshot(std::vector<Entry>& out)
+void AcquireShared()
 {
-    AcquireSRWLockExclusive(&s_lock);
-    Tick();
-    out = s_snapshot;
-    ReleaseSRWLockExclusive(&s_lock);
+    // Refresh under the write lock only when the snapshot is actually stale.
+    // Readers hugely outnumber rebuilds (many per frame vs one per ~8 ms), so
+    // keeping the common path on a shared lock is what makes this cheap.
+    if (GetTickCount64() - s_lastTickMs >= kSnapshotIntervalMs) {
+        AcquireSRWLockExclusive(&s_lock);
+        Tick();   // re-checks the throttle; another thread may have won the race
+        ReleaseSRWLockExclusive(&s_lock);
+    }
+    AcquireSRWLockShared(&s_lock);
+}
+
+void ReleaseShared() { ReleaseSRWLockShared(&s_lock); }
+
+uint32_t CopySnapshot(std::vector<Entry>& out, uint32_t haveGeneration)
+{
+    AcquireShared();
+    const uint32_t gen = s_generation.load(std::memory_order_relaxed);
+    if (gen != haveGeneration || out.size() != s_snapshot.size())
+        out = s_snapshot;
+    ReleaseShared();
+    return gen;
 }
 
 bool ValidateLive(void* ptr, float& outX, float& outY, int32_t& outHp)

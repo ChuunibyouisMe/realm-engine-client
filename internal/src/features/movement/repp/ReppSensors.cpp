@@ -211,10 +211,10 @@ SensorSnapshot Build(float playerX, float playerY, const Settings& settings)
     // lock (highest-maxHp enemy, FULL range). One game-thread pass over the
     // self-refreshing EnemyTracker snapshot — keeps the lock fresh and avoids
     // any WorldTAB::GetEntities cost for normal play.
-    // Locked: the shot hook rebuilds this snapshot from the game's logic
-    // thread, so iterating it unguarded could invalidate under us.
-    EnemyTracker::Acquire();
-    EnemyTracker::Tick();
+    // Shared read lock: the shot hook rebuilds this snapshot from the game's
+    // logic thread, so iterating it unguarded could invalidate under us.
+    // AcquireShared refreshes only when stale, and lets readers run concurrently.
+    EnemyTracker::AcquireShared();
     int32_t lockId = 0, lockMaxHp = -1;
     float   lockX = 0.f, lockY = 0.f;
     const std::vector<EnemyTracker::Entry>& enemies = EnemyTracker::GetSnapshot();
@@ -238,7 +238,7 @@ SensorSnapshot Build(float playerX, float playerY, const Settings& settings)
             lockMaxHp = e.maxHp; lockId = e.id; lockX = e.x; lockY = e.y;
         }
     }
-    EnemyTracker::Release();
+    EnemyTracker::ReleaseShared();
     if (lockMaxHp >= 0) { out.hasLock = true; out.lockId = lockId; out.lockPos = { lockX, lockY }; }
 
     // Projectiles → time-parametrized threats. Static reusable buffer: the

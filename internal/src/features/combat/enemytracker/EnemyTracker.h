@@ -29,9 +29,9 @@ struct Entry {
     void*   ptr;             // raw entity pointer (for direct field reads)
 };
 
-// Rebuilds the snapshot from the world dictionary. Self-throttled, so any
-// consumer may call it before reading and redundant calls within a frame are
-// cheap no-ops.
+// Rebuilds the snapshot from the world dictionary. Self-throttled. Prefer
+// AcquireShared(), which refreshes as needed; this remains for callers that
+// already hold the write lock.
 void Tick();
 
 // All entries from the last Tick (no filtering).
@@ -40,22 +40,34 @@ const std::vector<Entry>& GetSnapshot();
 using Callback = void(*)(const Entry&, void* user);
 void Enumerate(Callback cb, void* user);
 
-// Refreshes and copies the snapshot, taking the lock internally. Prefer this
-// over Acquire/Tick/GetSnapshot whenever the consumer runs caller-supplied
-// callbacks: invoking unknown code while holding a non-recursive lock is a
-// deadlock waiting to happen, and a slow callback would stall the shot hook.
-void CopySnapshot(std::vector<Entry>& out);
+// Refreshes and copies the snapshot, taking the lock internally, and returns
+// the generation copied. Prefer this over AcquireShared/GetSnapshot whenever the
+// consumer runs caller-supplied callbacks: invoking unknown code while holding a
+// lock is a deadlock waiting to happen, and a slow callback would stall the shot
+// hook. Pass the generation you last copied to skip the copy when nothing has
+// been rebuilt since.
+uint32_t CopySnapshot(std::vector<Entry>& out, uint32_t haveGeneration = 0);
 
 // Object ID of the local player's world-dict entry, updated each Tick.
 // More reliable than ProjectileTracking::GetLocalPlayerObjectId() which
 // depends on WorldTAB having fired at least once.
 int32_t GetLocalPlayerObjectId();
 
-// Snapshot lock. Plain calls rather than an RAII guard on purpose: the callers
-// use __try/__except, which MSVC forbids in a function holding objects with
+// Reader lock. AcquireShared() refreshes the snapshot first if it is stale
+// (taking the write lock only for that rebuild), then takes a shared lock, so
+// concurrent readers no longer serialise against each other — the common case
+// by far, since the snapshot is only rebuilt every ~8 ms but read many times
+// per frame by the aim and dodge paths. Callers must not call Tick() themselves.
+//
+// Plain calls rather than an RAII guard on purpose: the callers use
+// __try/__except, which MSVC forbids in a function holding objects with
 // destructors (C2712).
-void Acquire();
-void Release();
+void AcquireShared();
+void ReleaseShared();
+
+// Increments every time the snapshot is actually rebuilt. Consumers that keep
+// their own copy can use it to skip redundant copying.
+uint32_t Generation();
 
 // Re-reads an entity's live state straight from its pointer, bypassing the
 // snapshot. The shot hook uses this to confirm a target is still alive and

@@ -118,11 +118,10 @@ static void RunTick()
     FillConfig(cfg);
 
     // Mouse world position is read inside TargetSelector::Select via TestTAB
-    EnemyTracker::Acquire();
-    EnemyTracker::Tick();
+    EnemyTracker::AcquireShared();
     const TargetSelector::Result result = TargetSelector::Select(
         cfg, px, py, 0.f, 0.f, WeaponCalibrator::GetProfile());
-    EnemyTracker::Release();
+    EnemyTracker::ReleaseShared();
 
     s_hasTarget.store(result.found, std::memory_order_relaxed);
     s_aimFocusId.store(result.found ? result.enemyId : 0, std::memory_order_relaxed);
@@ -162,8 +161,12 @@ void Tick()
 {
     Install();
 
+    // The per-frame pass now only feeds the UI overlay and the dodge code's
+    // HasTarget/GetAimFocusEnemyId queries — the shot hook resolves its own aim
+    // independently. 30 Hz is ample for that, and running the O(n) tier select
+    // at 125 Hz was costing frame time for no visible benefit.
     const ULONGLONG wall = GetTickCount64();
-    if (wall - s_lastThrottleMs < 8ULL) return;
+    if (wall - s_lastThrottleMs < 33ULL) return;
     s_lastThrottleMs = wall;
 
     RunTick();
@@ -251,11 +254,28 @@ bool ResolveShotAim(void* player, float& outX, float& outY)
     TargetSelector::Config cfg;
     FillConfig(cfg);
 
+    // Multi-projectile weapons call the shot hook once per projectile, and the
+    // tier select is O(enemies). Reuse the previous selection while neither the
+    // snapshot nor the player has moved on — liveness is still re-checked below,
+    // so this changes no behaviour, it just avoids re-selecting several times
+    // within a single volley.
+    static thread_local uint32_t s_memoGen = 0;
+    static thread_local float    s_memoPx = 0.f, s_memoPy = 0.f;
+    static thread_local TargetSelector::Result s_memoResult;
+
     TargetSelector::Result result;
-    EnemyTracker::Acquire();
-    EnemyTracker::Tick();   // self-throttled; reuses the render pass when fresh
-    result = TargetSelector::Select(cfg, px, py, 0.f, 0.f, WeaponCalibrator::GetProfile());
-    EnemyTracker::Release();
+    const uint32_t gen = EnemyTracker::Generation();
+    const float movedSq = (px - s_memoPx) * (px - s_memoPx) + (py - s_memoPy) * (py - s_memoPy);
+    if (gen != 0 && gen == s_memoGen && movedSq < 0.0025f) {
+        result = s_memoResult;
+    } else {
+        EnemyTracker::AcquireShared();   // refreshes only if stale
+        result = TargetSelector::Select(cfg, px, py, 0.f, 0.f, WeaponCalibrator::GetProfile());
+        EnemyTracker::ReleaseShared();
+        s_memoGen = EnemyTracker::Generation();
+        s_memoPx = px; s_memoPy = py;
+        s_memoResult = result;
+    }
 
     if (!result.found) return false;
 
@@ -310,8 +330,12 @@ void EnumerateLiveEnemies(EnemyScanCallback cb, void* user) {
     // and running unknown code under a non-recursive lock risks deadlock (a
     // callback that enumerates again) and would stall the shot hook. The buffer
     // is static per thread so the copy costs no allocation after the first call.
+    // Copy at most once per rebuild. The dodge code calls this up to seven times
+    // per frame; copying the whole snapshot each time was pure waste, since the
+    // data only changes when EnemyTracker actually rebuilds (~every 8 ms).
     static thread_local std::vector<EnemyTracker::Entry> s_scratch;
-    EnemyTracker::CopySnapshot(s_scratch);
+    static thread_local uint32_t s_scratchGen = 0;
+    s_scratchGen = EnemyTracker::CopySnapshot(s_scratch, s_scratchGen);
     for (const EnemyTracker::Entry& e : s_scratch)
         cb(e.x, e.y, e.id, user);
 }
