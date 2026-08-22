@@ -155,6 +155,15 @@ void Render()
             }
         }
 
+        int styleIdx = static_cast<int>(SafeZoneMap::GetStyle());
+        ImGui::PushItemWidth(180.f);
+        if (ImGui::Combo("Style##szmStyle", &styleIdx, "Fill only\0Outline only\0Both\0"))
+            SafeZoneMap::SetStyle(static_cast<SafeZoneMap::Style>(styleIdx));
+        ImGui::PopItemWidth();
+        ImGui::SameLine(); ImGui::TextDisabled("(?)");
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Outlines trace the exact edge of each region at full field\nresolution. Fills alone read soft and blur the gaps together.");
+
         bool showDanger = SafeZoneMap::IsShowDanger();
         if (ImGui::Checkbox("Also shade danger##szmDanger", &showDanger))
             SafeZoneMap::SetShowDanger(showDanger);
@@ -166,6 +175,19 @@ void Render()
         ImGui::PushItemWidth(180.f);
         if (ImGui::SliderFloat("Look ahead (ms)##szmHorizon", &horizon, 300.f, 4000.f, "%.0f"))
             SafeZoneMap::SetHorizonMs(horizon);
+
+        float dangerWin = SafeZoneMap::GetDangerWindowMs();
+        if (ImGui::SliderFloat("Danger window (ms)##szmDangerWin", &dangerWin, 100.f, 2000.f, "%.0f"))
+            SafeZoneMap::SetDangerWindowMs(dangerWin);
+        ImGui::PopItemWidth();
+        ImGui::SameLine(); ImGui::TextDisabled("(?)");
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip(
+                "How soon a shot must arrive before its tile is painted red.\n"
+                "Separate from look-ahead on purpose: a bullet a second away\n"
+                "from a tile is no threat to you standing there now, and\n"
+                "shading it anyway hides the gaps between shots.");
+        ImGui::PushItemWidth(180.f);
 
         float comfort = SafeZoneMap::GetComfortTiles();
         if (ImGui::SliderFloat("Comfort margin (tiles)##szmComfort", &comfort, 0.f, 3.f, "%.2f"))

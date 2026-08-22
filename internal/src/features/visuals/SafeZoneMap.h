@@ -37,6 +37,22 @@ float GetOpacity();
 void SetShowDanger(bool on);
 bool IsShowDanger();
 
+// How far ahead danger is *painted*, in milliseconds — deliberately separate
+// from the look-ahead used to decide safety. Safety needs a long window (ground
+// is only safe if nothing arrives for a while), but shading danger that far out
+// is misleading: a shot a second away from a tile is not a threat to you
+// standing there now, you will have moved. Painting it anyway drew a long red
+// streak ahead of every travelling bullet and buried the gaps between shots.
+void  SetDangerWindowMs(float ms);
+float GetDangerWindowMs();
+
+// Rendering style. Outlines trace the exact boundary of each region at the
+// field's native resolution; fills are the soft wash. Bullets are thin, so
+// outline-led drawing reads far closer to the real shape of the danger.
+enum class Style : int { FillOnly = 0, OutlineOnly = 1, Both = 2 };
+void  SetStyle(Style s);
+Style GetStyle();
+
 // Minimum clearance, in tiles, before a safe pocket is worth showing. The field
 // already accounts for the player's hitbox, so a cell marked safe is one you
 // would technically fit in — but a gap only as wide as your hitbox is not a gap

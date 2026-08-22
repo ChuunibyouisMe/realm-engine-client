@@ -55,6 +55,12 @@ static std::atomic<bool>  s_showDanger{ true };
 static std::atomic<float> s_comfortTiles{ 0.7f };
 static std::atomic<float> s_maxReachTiles{ 9.f };
 static std::atomic<float> s_effReachTiles{ 0.f };
+static std::atomic<float> s_dangerWindowMs{ 450.f };
+static std::atomic<int>   s_style{ 2 };   // Style::Both
+
+// Per-cell render classification, rebuilt each frame: 0 = draw nothing,
+// 1 = comfortable safe ground, 2 = imminent danger.
+static uint8_t s_class[kCellCount];
 
 static float     s_field[kCellCount];
 // Distance, in tiles, from each safe cell to the nearest unsafe one. This is
@@ -299,6 +305,17 @@ float GetOpacity() { return s_opacity.load(std::memory_order_relaxed); }
 void SetShowDanger(bool on) { s_showDanger.store(on, std::memory_order_relaxed); }
 bool IsShowDanger()         { return s_showDanger.load(std::memory_order_relaxed); }
 
+void SetDangerWindowMs(float ms) {
+    if (!std::isfinite(ms)) return;
+    if (ms < 100.f) ms = 100.f;
+    if (ms > 2000.f) ms = 2000.f;
+    s_dangerWindowMs.store(ms, std::memory_order_relaxed);
+}
+float GetDangerWindowMs() { return s_dangerWindowMs.load(std::memory_order_relaxed); }
+
+void  SetStyle(Style st) { s_style.store(static_cast<int>(st), std::memory_order_relaxed); }
+Style GetStyle()         { return static_cast<Style>(s_style.load(std::memory_order_relaxed)); }
+
 void SetComfortTiles(float t) {
     if (!std::isfinite(t)) return;
     if (t < 0.f) t = 0.f;
@@ -369,18 +386,20 @@ void Render()
     const float opacity  = s_opacity.load(std::memory_order_relaxed);
     const bool  showDang = s_showDanger.load(std::memory_order_relaxed);
 
-    // Draw at whole-tile resolution: 2x2 field cells merged by worst case. The
-    // field is computed at half-tile precision, but drawing 6400 quads a frame
-    // is wasted work on a handheld — a tile is already finer than the player
-    // can meaningfully react to.
-    constexpr int kStep = static_cast<int>(1.f / kCellTiles);   // 2
-    const float quadTiles = kCellTiles * static_cast<float>(kStep);
-    const float comfort = s_comfortTiles.load(std::memory_order_relaxed);
+    // Classify at the field's native half-tile resolution. The previous pass
+    // merged 2x2 cells and filled them with soft alpha, which is what made the
+    // overlay read like watercolour — adjacent quads blended into blobs several
+    // times wider than the bullets they represented.
+    const float comfort   = s_comfortTiles.load(std::memory_order_relaxed);
+    const float dangerWin = s_dangerWindowMs.load(std::memory_order_relaxed);
+    const Style style     = static_cast<Style>(s_style.load(std::memory_order_relaxed));
+    const bool  drawFill  = (style != Style::OutlineOnly);
+    const bool  drawEdge  = (style != Style::FillOnly);
+    const bool  showDanger = s_showDanger.load(std::memory_order_relaxed);
 
     // Reach: safe ground you cannot get to inside the look-ahead window is not
     // actionable, so bound the drawing by how far you could actually travel,
-    // capped by the user's preference. Falls back to the cap if speed is
-    // unreadable.
+    // capped by the user's preference.
     int32_t hp = 0, maxHp = 0;
     float spd = 0.f, tilesPerSec = 0.f;
     TestTAB::ReadDodgePlayerStats(hp, maxHp, spd, tilesPerSec);
@@ -390,79 +409,120 @@ void Render()
         reach = (std::min)(cap, tilesPerSec * (horizon / 1000.f));
     if (reach < 2.f) reach = 2.f;
     s_effReachTiles.store(reach, std::memory_order_relaxed);
-    const float cullR = reach;
 
-    // Player position drives the reach test — the camera can be off-centre.
     float pxNow = camX, pyNow = camY;
     {
         void* lp = GameState::GetLocalPtr();
         float tx = 0.f, ty = 0.f;
         if (ReadPlayerPos(lp, tx, ty)) { pxNow = tx; pyNow = ty; }
     }
+    const float reachSq = reach * reach;
 
-    // Camera basis, hoisted out of the loop, with the world->screen scale folded
-    // in. Every tile is the same rotated square, so its corner offsets in screen
-    // space are constant for the whole frame.
+    for (int cy = 0; cy < kGridDim; ++cy) {
+        const float wy = s_originY + (static_cast<float>(cy) + 0.5f) * kCellTiles;
+        const float ddy = wy - pyNow;
+        for (int cx = 0; cx < kGridDim; ++cx) {
+            const int i = cy * kGridDim + cx;
+            const float wx = s_originX + (static_cast<float>(cx) + 0.5f) * kCellTiles;
+            const float ddx = wx - pxNow;
+            if (ddx * ddx + ddy * ddy > reachSq) { s_class[i] = 0; continue; }
+
+            const float v = s_field[i];
+            if (v == kSafe) {
+                // Only pockets with room to actually steer into.
+                s_class[i] = (s_clearance[i] >= comfort) ? 1 : 0;
+            } else {
+                // Danger is painted only inside its own, much shorter window.
+                s_class[i] = (showDanger && v <= dangerWin) ? 2 : 0;
+            }
+        }
+    }
+
+    // Camera basis hoisted: every cell is the same rotated square, so its corner
+    // offsets in screen space are constant for the frame.
     const float cosA = cosf(angleRad) * zoom;
     const float sinA = sinf(angleRad) * zoom;
-    const float h = quadTiles * 0.5f;
+    const float h = kCellTiles * 0.5f;
     const float qx0 = -h * cosA + h * sinA, qy0 = -h * sinA - h * cosA;
     const float qx1 =  h * cosA + h * sinA, qy1 =  h * sinA - h * cosA;
     const float qx2 =  h * cosA - h * sinA, qy2 =  h * sinA + h * cosA;
     const float qx3 = -h * cosA - h * sinA, qy3 = -h * sinA + h * cosA;
 
-    for (int cy0 = 0; cy0 + kStep <= kGridDim; cy0 += kStep) {
-        for (int cx0 = 0; cx0 + kStep <= kGridDim; cx0 += kStep) {
-            float worst = kSafe;
-            float minClear = FLT_MAX;
-            for (int dy = 0; dy < kStep; ++dy)
-                for (int dx = 0; dx < kStep; ++dx) {
-                    const int idx = (cy0 + dy) * kGridDim + (cx0 + dx);
-                    const float v = s_field[idx];
-                    if (v < worst) worst = v;
-                    if (s_clearance[idx] < minClear) minClear = s_clearance[idx];
+    auto project = [&](float wx, float wy, float& sx, float& sy) {
+        sx = cx + (wx - camX) * cosA - (wy - camY) * sinA;
+        sy = cy + (wx - camX) * sinA + (wy - camY) * cosA;
+    };
+
+    // ── Fills ────────────────────────────────────────────────────────────────
+    // Kept deliberately faint. The fill says "region", the outline says "edge",
+    // and it is the edge that carries the information.
+    if (drawFill) {
+        for (int cyi = 0; cyi < kGridDim; ++cyi) {
+            const float wy = s_originY + (static_cast<float>(cyi) + 0.5f) * kCellTiles;
+            for (int cxi = 0; cxi < kGridDim; ++cxi) {
+                const uint8_t k = s_class[cyi * kGridDim + cxi];
+                if (!k) continue;
+                const float wx = s_originX + (static_cast<float>(cxi) + 0.5f) * kCellTiles;
+
+                ImU32 col;
+                if (k == 1) {
+                    const int a = static_cast<int>(30.f * opacity);
+                    if (a <= 2) continue;
+                    col = IM_COL32(60, 225, 130, a);
+                } else {
+                    const float u = 1.f - (s_field[cyi * kGridDim + cxi] / dangerWin);
+                    const int a = static_cast<int>((18.f + 46.f * u) * opacity);
+                    if (a <= 2) continue;
+                    col = IM_COL32(240, 70, 70, a);
                 }
 
-            const float wx = s_originX + (static_cast<float>(cx0) + kStep * 0.5f) * kCellTiles;
-            const float wy = s_originY + (static_cast<float>(cy0) + kStep * 0.5f) * kCellTiles;
-
-            // Only ground within reach of the player is actionable.
-            const float ddx = wx - pxNow, ddy = wy - pyNow;
-            if (ddx * ddx + ddy * ddy > cullR * cullR) continue;
-
-            ImU32 col;
-            if (worst == kSafe) {
-                // Only pockets with room to actually steer into. A slot exactly
-                // the width of the hitbox is survivable on paper and useless in
-                // practice, and drawing those was the bulk of the noise.
-                if (minClear < comfort) continue;
-                // Roomier pockets read brighter, so the eye lands on the safest
-                // ground rather than the nearest speck of green.
-                const float roomy = (comfort > 0.01f)
-                    ? (std::min)(1.f, (minClear - comfort) / (comfort * 2.f)) : 1.f;
-                const int a = static_cast<int>((34.f + 40.f * roomy) * opacity);
-                if (a <= 3) continue;
-                col = IM_COL32(70, 220, 120, a);
-            } else {
-                if (!showDang) continue;
-                // Danger ramps by urgency: red now, fading out toward the horizon.
-                const float f = (horizon > 1.f) ? (worst / horizon) : 1.f;
-                const float u = 1.f - (f < 0.f ? 0.f : (f > 1.f ? 1.f : f)); // 1 = imminent
-                const int a = static_cast<int>((28.f + 120.f * u * u) * opacity);
-                if (a <= 3) continue;
-                const int g = static_cast<int>(190.f * (1.f - u));
-                col = IM_COL32(235, 60 + g, 60, a);
+                float sxC, syC;
+                project(wx, wy, sxC, syC);
+                dl->AddQuadFilled(ImVec2(sxC + qx0, syC + qy0), ImVec2(sxC + qx1, syC + qy1),
+                                  ImVec2(sxC + qx2, syC + qy2), ImVec2(sxC + qx3, syC + qy3), col);
             }
+        }
+    }
 
-            // Project the centre only, then offset by the pre-rotated corner
-            // deltas. W2S recomputes cosf/sinf per call, and doing that four
-            // times per tile was thousands of trig calls a frame for a shape
-            // whose screen-space corners are identical for every cell.
-            const float sxC = cx + (wx - camX) * cosA - (wy - camY) * sinA;
-            const float syC = cy + (wx - camX) * sinA + (wy - camY) * cosA;
+    // ── Outlines ─────────────────────────────────────────────────────────────
+    // Trace the boundary of each region by emitting a segment wherever a cell
+    // differs from its right or lower neighbour. That draws the exact silhouette
+    // of a pocket as a thin line instead of a soft blob, which is what makes the
+    // gaps between shots legible. Only boundary cells emit anything, so this is
+    // a few hundred segments, not one per cell.
+    if (drawEdge) {
+        const int aSafe   = static_cast<int>(215.f * opacity);
+        const int aDanger = static_cast<int>(200.f * opacity);
+        const ImU32 colSafe   = IM_COL32(90, 255, 150, aSafe   < 0 ? 0 : aSafe);
+        const ImU32 colDanger = IM_COL32(255, 80, 80, aDanger < 0 ? 0 : aDanger);
 
-            dl->AddQuadFilled(ImVec2(sxC + qx0, syC + qy0), ImVec2(sxC + qx1, syC + qy1),
-                              ImVec2(sxC + qx2, syC + qy2), ImVec2(sxC + qx3, syC + qy3), col);
+        auto edge = [&](float ax, float ay, float bx, float by, ImU32 col) {
+            float sx0, sy0, sx1, sy1;
+            project(ax, ay, sx0, sy0);
+            project(bx, by, sx1, sy1);
+            dl->AddLine(ImVec2(sx0, sy0), ImVec2(sx1, sy1), col, 1.6f);
+        };
+
+        for (int cyi = 0; cyi < kGridDim; ++cyi) {
+            for (int cxi = 0; cxi < kGridDim; ++cxi) {
+                const uint8_t k = s_class[cyi * kGridDim + cxi];
+                const uint8_t kr = (cxi + 1 < kGridDim) ? s_class[cyi * kGridDim + (cxi + 1)] : 0;
+                const uint8_t kd = (cyi + 1 < kGridDim) ? s_class[(cyi + 1) * kGridDim + cxi] : 0;
+
+                const float x0 = s_originX + static_cast<float>(cxi) * kCellTiles;
+                const float y0 = s_originY + static_cast<float>(cyi) * kCellTiles;
+                const float x1 = x0 + kCellTiles;
+                const float y1 = y0 + kCellTiles;
+
+                if (k != kr) {
+                    const uint8_t owner = k ? k : kr;
+                    edge(x1, y0, x1, y1, owner == 1 ? colSafe : colDanger);
+                }
+                if (k != kd) {
+                    const uint8_t owner = k ? k : kd;
+                    edge(x0, y1, x1, y1, owner == 1 ? colSafe : colDanger);
+                }
+            }
         }
     }
 }
