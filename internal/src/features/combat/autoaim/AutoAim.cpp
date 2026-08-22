@@ -14,6 +14,7 @@
 #include <atomic>
 #include <cmath>
 #include <cstdint>
+#include <vector>
 
 namespace {
 
@@ -57,6 +58,34 @@ static bool LocalStealthBlocksAim(void* player)
     return RuntimeOffsets::HasCondition(full, RuntimeOffsets::ConditionEffects::Invisible);
 }
 
+// Fills cfg from the current settings atomics. Shared by the per-frame pass and
+// the fire-time path so both select identically.
+static void FillConfig(TargetSelector::Config& cfg)
+{
+    cfg.mode                 = static_cast<TargetSelector::Mode>(s_aimModeInt.load(std::memory_order_relaxed));
+    cfg.shootInvulnerable    = s_shootInvulnerable.load(std::memory_order_relaxed);
+    cfg.prioritizeBosses     = s_prioritizeBosses.load(std::memory_order_relaxed);
+    cfg.ignoreWalls          = s_ignoreWalls.load(std::memory_order_relaxed);
+    cfg.rangeLeadBias        = s_rangeLeadBias.load(std::memory_order_relaxed);
+    cfg.mouseBoundingEnabled = s_mouseBoundingEnabled.load(std::memory_order_relaxed);
+    cfg.mouseBoundingRange   = s_mouseBoundingRange.load(std::memory_order_relaxed);
+    cfg.lockedEnemyId        = s_lockedEnemyId.load(std::memory_order_relaxed);
+    cfg.skipObjTypes         = s_skipObjTypes;
+    cfg.skipObjCount         = s_skipObjCount;
+}
+
+// Reads the local player's world position. Returns false if it can't.
+static bool ReadPlayerPos(void* local, float& px, float& py)
+{
+    if (!AddrOk(local)) return false;
+    __try {
+        uint8_t* lp = reinterpret_cast<uint8_t*>(local);
+        px = *reinterpret_cast<float*>(lp + RuntimeOffsets::PosX);
+        py = *reinterpret_cast<float*>(lp + RuntimeOffsets::PosY);
+    } __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
+    return std::isfinite(px) && std::isfinite(py);
+}
+
 static void RunTick()
 {
     const bool aimOn = s_enabled.load(std::memory_order_relaxed);
@@ -75,34 +104,23 @@ static void RunTick()
     // Refresh shared data sources for target selection. EnemyTracker::Tick is
     // self-throttled, so callers of EnumerateLiveEnemies can also trigger it.
     WeaponCalibrator::Tick(local);
-    EnemyTracker::Tick();
 
     float px = 0.f, py = 0.f;
-    __try {
-        uint8_t* lp = reinterpret_cast<uint8_t*>(local);
-        px = *reinterpret_cast<float*>(lp + RuntimeOffsets::PosX);
-        py = *reinterpret_cast<float*>(lp + RuntimeOffsets::PosY);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
+    if (!ReadPlayerPos(local, px, py)) {
         s_hasTarget.store(false, std::memory_order_relaxed);
         AimHooks::SetTarget(false, 0.f, 0.f);
         return;
     }
 
     TargetSelector::Config cfg;
-    cfg.mode                 = static_cast<TargetSelector::Mode>(s_aimModeInt.load(std::memory_order_relaxed));
-    cfg.shootInvulnerable    = s_shootInvulnerable.load(std::memory_order_relaxed);
-    cfg.prioritizeBosses     = s_prioritizeBosses.load(std::memory_order_relaxed);
-    cfg.ignoreWalls          = s_ignoreWalls.load(std::memory_order_relaxed);
-    cfg.rangeLeadBias        = s_rangeLeadBias.load(std::memory_order_relaxed);
-    cfg.mouseBoundingEnabled = s_mouseBoundingEnabled.load(std::memory_order_relaxed);
-    cfg.mouseBoundingRange   = s_mouseBoundingRange.load(std::memory_order_relaxed);
-    cfg.lockedEnemyId        = s_lockedEnemyId.load(std::memory_order_relaxed);
-    cfg.skipObjTypes         = s_skipObjTypes;
-    cfg.skipObjCount         = s_skipObjCount;
+    FillConfig(cfg);
 
     // Mouse world position is read inside TargetSelector::Select via TestTAB
+    EnemyTracker::Acquire();
+    EnemyTracker::Tick();
     const TargetSelector::Result result = TargetSelector::Select(
         cfg, px, py, 0.f, 0.f, WeaponCalibrator::GetProfile());
+    EnemyTracker::Release();
 
     s_hasTarget.store(result.found, std::memory_order_relaxed);
     s_aimFocusId.store(result.found ? result.enemyId : 0, std::memory_order_relaxed);
@@ -125,6 +143,8 @@ void Install()
     ProjectileTracking::Install();
     AoeTracking::Install();
     AimHooks::Install();
+    // The shot hook resolves its own aim; register the callback that lets it.
+    AimHooks::SetShotAimResolver(&ResolveShotAim);
 }
 
 void Uninstall()
@@ -210,6 +230,47 @@ bool IsReverseCultStaff()            { return s_reverseCultStaff.load(std::memor
 void SetOffsetColossusSword(bool on) { s_offsetColossus.store(on, std::memory_order_relaxed); AimHooks::SetOffsetColossusSword(on); }
 bool IsOffsetColossusSword()         { return s_offsetColossus.load(std::memory_order_relaxed); }
 
+bool ResolveShotAim(void* player, float& outX, float& outY)
+{
+    if (!s_enabled.load(std::memory_order_relaxed)) return false;
+    if (!AddrOk(player)) return false;
+    if (LocalStealthBlocksAim(player)) return false;
+
+    float px = 0.f, py = 0.f;
+    if (!ReadPlayerPos(player, px, py)) return false;
+
+    TargetSelector::Config cfg;
+    FillConfig(cfg);
+
+    TargetSelector::Result result;
+    EnemyTracker::Acquire();
+    EnemyTracker::Tick();   // self-throttled; reuses the render pass when fresh
+    result = TargetSelector::Select(cfg, px, py, 0.f, 0.f, WeaponCalibrator::GetProfile());
+    EnemyTracker::Release();
+
+    if (!result.found) return false;
+
+    // The snapshot can be up to the throttle interval old, and the enemy may
+    // have died inside it. Confirm against live memory and re-lead from where
+    // the target actually is right now.
+    float liveX = result.rawX, liveY = result.rawY;
+    int32_t liveHp = 0;
+    if (result.ptr) {
+        if (!EnemyTracker::ValidateLive(result.ptr, liveX, liveY, liveHp))
+            return false;   // dead or unreadable — leave the player's own angle alone
+    }
+
+    TargetSelector::ApplyLead(px, py, liveX, liveY, result.vx, result.vy,
+                              WeaponCalibrator::GetProfile(), outX, outY);
+
+    // Keep the UI/telemetry in step with what we actually shot at.
+    s_hasTarget.store(true, std::memory_order_relaxed);
+    s_aimFocusId.store(result.enemyId, std::memory_order_relaxed);
+    s_aimX.store(outX, std::memory_order_relaxed);
+    s_aimY.store(outY, std::memory_order_relaxed);
+    return std::isfinite(outX) && std::isfinite(outY);
+}
+
 bool    HasTarget()       { return s_hasTarget.load(std::memory_order_relaxed); }
 void    GetAimTarget(float& ox, float& oy) {
     ox = s_aimX.load(std::memory_order_relaxed);
@@ -234,13 +295,15 @@ void EnumerateLiveEnemies(EnemyScanCallback cb, void* user) {
     if (!cb) return;
     // Ensure a fresh snapshot — consumers (auto-dodge) may run with auto-aim off.
     // EnemyTracker::Tick is self-throttled, so this is deduped against the aim path.
-    EnemyTracker::Tick();
-    struct Ctx { EnemyScanCallback cb; void* user; };
-    Ctx ctx{ cb, user };
-    EnemyTracker::Enumerate([](const EnemyTracker::Entry& e, void* u) {
-        auto* c = static_cast<Ctx*>(u);
-        c->cb(e.x, e.y, e.id, c->user);
-    }, &ctx);
+    //
+    // Copy first, then call back with the lock released: `cb` is caller-supplied,
+    // and running unknown code under a non-recursive lock risks deadlock (a
+    // callback that enumerates again) and would stall the shot hook. The buffer
+    // is static per thread so the copy costs no allocation after the first call.
+    static thread_local std::vector<EnemyTracker::Entry> s_scratch;
+    EnemyTracker::CopySnapshot(s_scratch);
+    for (const EnemyTracker::Entry& e : s_scratch)
+        cb(e.x, e.y, e.id, user);
 }
 
 } // namespace AutoAim

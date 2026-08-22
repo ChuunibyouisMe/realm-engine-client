@@ -151,7 +151,7 @@ static bool SehReadLocalKlassAndPos(void* local, float* outX, float* outY, uint6
 struct CandidateOut {
     int32_t id, objType, hp, maxHp;
     float   x, y;
-    bool    isInvulnerable, hasHealthBar;
+    bool    isInvulnerable, hasHealthBar, isQuest;
     void*   ptr;
 };
 
@@ -237,6 +237,10 @@ static bool SehReadCandidate(uint8_t* entry, void* local, uint64_t localKlass, C
 static std::vector<EnemyTracker::Entry> s_snapshot;
 static std::atomic<int32_t>  s_localPlayerObjectId{ 0 };
 static ULONGLONG             s_lastTickMs = 0;
+
+// Guards s_snapshot and s_velMap. Contention is negligible: the render thread
+// rebuilds at most every 8 ms and the shot hook only runs when you fire.
+static SRWLOCK s_lock = SRWLOCK_INIT;
 
 } // namespace
 
@@ -349,6 +353,47 @@ void Enumerate(Callback cb, void* user)
 int32_t GetLocalPlayerObjectId()
 {
     return s_localPlayerObjectId.load(std::memory_order_relaxed);
+}
+
+void Acquire() { AcquireSRWLockExclusive(&s_lock); }
+void Release() { ReleaseSRWLockExclusive(&s_lock); }
+
+void CopySnapshot(std::vector<Entry>& out)
+{
+    AcquireSRWLockExclusive(&s_lock);
+    Tick();
+    out = s_snapshot;
+    ReleaseSRWLockExclusive(&s_lock);
+}
+
+bool ValidateLive(void* ptr, float& outX, float& outY, int32_t& outHp)
+{
+    if (!AddrOk(ptr)) return false;
+    __try {
+        uint8_t* ent = reinterpret_cast<uint8_t*>(ptr);
+
+        const int32_t hp = *reinterpret_cast<int32_t*>(ent + kOffHp);
+        if (hp <= 0) return false;
+
+        const float ex = *reinterpret_cast<float*>(ent + kOffPosX);
+        const float ey = *reinterpret_cast<float*>(ent + kOffPosY);
+        if (!std::isfinite(ex) || !std::isfinite(ey) || (ex == 0.f && ey == 0.f))
+            return false;
+
+        // The entity can die between the last snapshot and the shot leaving —
+        // this is what stopped shots being sent at corpses.
+        uint32_t cond0 = 0, cond1 = 0;
+        if (RuntimeOffsets::TryReadMapObjectConditions(ptr, &cond0, &cond1) && (cond0 | cond1)) {
+            const uint64_t full = RuntimeOffsets::GetFullConditions(cond0, cond1);
+            if (RuntimeOffsets::HasCondition(full, RuntimeOffsets::ConditionEffects::Dead))
+                return false;
+        }
+
+        outX  = ex;
+        outY  = ey;
+        outHp = hp;
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
 }
 
 } // namespace EnemyTracker

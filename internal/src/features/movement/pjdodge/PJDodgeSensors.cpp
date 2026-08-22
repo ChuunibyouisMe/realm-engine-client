@@ -218,6 +218,9 @@ void Build(Snapshot& out, float playerX, float playerY, const Settings& settings
     const int32_t localId = ProjectileTracking::GetLocalPlayerObjectId();
 
     // Enemies → proximity blockers (scored by the core, never a hard veto).
+    // Locked: the shot hook rebuilds this snapshot from the game's logic
+    // thread, so iterating it unguarded could invalidate under us.
+    EnemyTracker::Acquire();
     EnemyTracker::Tick();
     for (const EnemyTracker::Entry& e : EnemyTracker::GetSnapshot()) {
         if (!IsFinitePoint(e.x, e.y)) continue;
@@ -227,6 +230,7 @@ void Build(Snapshot& out, float playerX, float playerY, const Settings& settings
         b.pos = { e.x, e.y };
         b.radius = kEnemyRadius;
     }
+    EnemyTracker::Release();
 
     // Projectiles → time-parametrized threat paths. Static buffer: the copy
     // API needs a vector, but the allocation amortizes to zero across frames.

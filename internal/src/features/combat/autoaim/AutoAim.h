@@ -59,6 +59,18 @@ bool IsReverseCultStaff();
 void SetOffsetColossusSword(bool on);
 bool IsOffsetColossusSword();
 
+// ── Fire-time aim resolution ──────────────────────────────────────────────────
+// Called by the ShootWithAngle detour on the game's logic thread, at the moment
+// a shot leaves. Refreshes the enemy snapshot, re-selects, re-validates that the
+// chosen enemy is still alive, and returns the world point to aim at.
+//
+// The per-frame Tick() used to be the only thing choosing a target, and the
+// hook simply replayed whatever it had cached. That made the aim as stale as the
+// last presented frame (22-33 ms on a Deck) — or permanently stale if the render
+// thread stopped ticking, which is what locked the aim to one angle and kept
+// shots landing on enemies that had already died.
+bool ResolveShotAim(void* player, float& outX, float& outY);
+
 // ── State queries ─────────────────────────────────────────────────────────────
 bool    HasTarget();
 void    GetAimTarget(float& outX, float& outY);

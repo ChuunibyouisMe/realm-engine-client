@@ -103,6 +103,7 @@ uint32_t OP_OccupySq      = 0x6B2;
 uint32_t OP_FullOcc       = 0x6E9;
 uint32_t OP_EnemyOcc      = 0x6EA;
 uint32_t OP_IsEnemy       = 0x6E1;
+uint32_t OP_IsQuest       = 0x6E0;
 uint32_t OP_IsStatic      = 0x6EB;
 uint32_t OP_BlockProj     = 0x6EC;
 // noHealthBar bool — true when the entity type has no visible HP bar. dump 0x6EE.
@@ -332,6 +333,7 @@ static Entry s_entries[] = {
     { "ObjectProperties", { "fullOccupy" },                          1, 0,     &OP_FullOcc,        false },
     { "ObjectProperties", { "enemyOccupySquare" },                   1, 0,     &OP_EnemyOcc,       false },
     { "ObjectProperties", { "isEnemy" },                             1, 0,     &OP_IsEnemy,        false },
+    { "ObjectProperties", { "isQuest", "quest" },                    2, 0,     &OP_IsQuest,        false },
     { "ObjectProperties", { "isStatic" },                            1, 0,     &OP_IsStatic,       false },
     { "ObjectProperties", { "blockProjectiles" },                    1, 0,     &OP_BlockProj,      false },
     // noHealthBar — true when entity type has no visible HP bar; must not be targeted.

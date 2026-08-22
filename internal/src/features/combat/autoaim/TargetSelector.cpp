@@ -42,13 +42,14 @@ struct TierState {
     float   bestVx = 0.f, bestVy = 0.f;
     int32_t bestId = 0;
     int32_t bestObjType = 0;
+    void*   bestPtr = nullptr;
     bool    found = false;
 };
 
 static void TierUpdate(TierState& tier, bool useHighestHp,
                        float distSq, int32_t hp,
                        float x, float y, float vx, float vy,
-                       int32_t id, int32_t objType)
+                       int32_t id, int32_t objType, void* ptr)
 {
     bool better = false;
     if (!tier.found) {
@@ -61,12 +62,37 @@ static void TierUpdate(TierState& tier, bool useHighestHp,
     if (!better) return;
     tier.found = true; tier.bestDist = distSq; tier.bestHp = hp;
     tier.bestX = x; tier.bestY = y; tier.bestVx = vx; tier.bestVy = vy;
-    tier.bestId = id; tier.bestObjType = objType;
+    tier.bestId = id; tier.bestObjType = objType; tier.bestPtr = ptr;
 }
 
 } // namespace
 
 namespace TargetSelector {
+
+void ApplyLead(float launchX, float launchY,
+               float targetX, float targetY,
+               float vx, float vy,
+               const WeaponProfile& weapon,
+               float& outX, float& outY)
+{
+    outX = targetX;
+    outY = targetY;
+
+    const float projSpeed = (weapon.avgSpeedTps > 0.1f) ? weapon.avgSpeedTps : 16.0f;
+    if (projSpeed <= 0.1f) return;
+
+    const float dx = targetX - launchX;
+    const float dy = targetY - launchY;
+    const float dist = sqrtf(dx * dx + dy * dy);
+
+    float travelTime = dist / projSpeed;
+    const float maxTime = (weapon.lifetimeMs > 0.f) ? (weapon.lifetimeMs / 1000.f) : 1.5f;
+    travelTime = (std::min)(travelTime, maxTime);
+
+    // vx/vy are tiles/ms; travelTime is seconds.
+    outX += (vx * 1000.f) * travelTime;
+    outY += (vy * 1000.f) * travelTime;
+}
 
 Result Select(const Config& cfg,
               float playerX, float playerY,
@@ -94,19 +120,13 @@ Result Select(const Config& cfg,
             r.found   = true;
             r.enemyId = e.id;
             r.objType = e.objType;
+            r.rawX    = e.x;
+            r.rawY    = e.y;
+            r.vx      = e.vx;
+            r.vy      = e.vy;
+            r.ptr     = e.ptr;
 
-            float aimX = e.x, aimY = e.y;
-            const float projSpeed = (weapon.avgSpeedTps > 0.1f) ? weapon.avgSpeedTps : 16.0f;
-            if (projSpeed > 0.1f) {
-                const float dist = sqrtf(pDx * pDx + pDy * pDy);
-                float travelTime = dist / projSpeed;
-                const float maxTime = (weapon.lifetimeMs > 0.f) ? (weapon.lifetimeMs / 1000.f) : 1.5f;
-                travelTime = (std::min)(travelTime, maxTime);
-                aimX += (e.vx * 1000.f) * travelTime;
-                aimY += (e.vy * 1000.f) * travelTime;
-            }
-            r.aimX = aimX;
-            r.aimY = aimY;
+            ApplyLead(playerX, playerY, e.x, e.y, e.vx, e.vy, weapon, r.aimX, r.aimY);
             return r;
         }
         // Lock target gone/invalid — fall through to normal selection
@@ -158,13 +178,13 @@ Result Select(const Config& cfg,
             const bool isFallback   = IsFallbackType(e.objType);
 
             if (cfg.prioritizeBosses && isQuest && !whitelisted) {
-                TierUpdate(quest, useHighestHp, scoreDistSq, e.hp, e.x, e.y, e.vx, e.vy, e.id, e.objType);
+                TierUpdate(quest, useHighestHp, scoreDistSq, e.hp, e.x, e.y, e.vx, e.vy, e.id, e.objType, e.ptr);
             } else if (e.isInvulnerable) {
-                TierUpdate(invuln, useHighestHp, scoreDistSq, e.hp, e.x, e.y, e.vx, e.vy, e.id, e.objType);
+                TierUpdate(invuln, useHighestHp, scoreDistSq, e.hp, e.x, e.y, e.vx, e.vy, e.id, e.objType, e.ptr);
             } else if (isFallback) {
-                TierUpdate(fallback, useHighestHp, scoreDistSq, e.hp, e.x, e.y, e.vx, e.vy, e.id, e.objType);
+                TierUpdate(fallback, useHighestHp, scoreDistSq, e.hp, e.x, e.y, e.vx, e.vy, e.id, e.objType, e.ptr);
             } else {
-                TierUpdate(normal, useHighestHp, scoreDistSq, e.hp, e.x, e.y, e.vx, e.vy, e.id, e.objType);
+                TierUpdate(normal, useHighestHp, scoreDistSq, e.hp, e.x, e.y, e.vx, e.vy, e.id, e.objType, e.ptr);
             }
         }
         next_entry:;
@@ -183,6 +203,11 @@ Result Select(const Config& cfg,
     r.found   = true;
     r.enemyId = winner->bestId;
     r.objType = winner->bestObjType;
+    r.rawX    = winner->bestX;
+    r.rawY    = winner->bestY;
+    r.vx      = winner->bestVx;
+    r.vy      = winner->bestVy;
+    r.ptr     = winner->bestPtr;
 
     // Apply lead prediction with launch point adjusted for Magnet Aim
     float launchX = playerX;
@@ -198,22 +223,8 @@ Result Select(const Config& cfg,
         }
     }
 
-    float aimX = winner->bestX;
-    float aimY = winner->bestY;
-    const float projSpeed = (weapon.avgSpeedTps > 0.1f) ? weapon.avgSpeedTps : 16.0f;
-    if (projSpeed > 0.1f) {
-        const float dx = aimX - launchX;
-        const float dy = aimY - launchY;
-        const float dist = sqrtf(dx * dx + dy * dy);
-        float travelTime = dist / projSpeed;
-        const float maxTime = (weapon.lifetimeMs > 0.f) ? (weapon.lifetimeMs / 1000.f) : 1.5f;
-        travelTime = (std::min)(travelTime, maxTime);
-        aimX += (winner->bestVx * 1000.f) * travelTime;
-        aimY += (winner->bestVy * 1000.f) * travelTime;
-    }
-
-    r.aimX = aimX;
-    r.aimY = aimY;
+    ApplyLead(launchX, launchY, winner->bestX, winner->bestY,
+              winner->bestVx, winner->bestVy, weapon, r.aimX, r.aimY);
 
     return r;
 }

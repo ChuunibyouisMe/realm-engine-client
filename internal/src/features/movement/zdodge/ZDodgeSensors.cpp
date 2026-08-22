@@ -145,6 +145,9 @@ SensorSnapshot Build(float playerX, float playerY, const Settings& settings)
 
     std::vector<int32_t> enemyIds;
     enemyIds.reserve(kMaxBlockers);
+    // Locked: the shot hook rebuilds this snapshot from the game's logic
+    // thread, so iterating it unguarded could invalidate under us.
+    EnemyTracker::Acquire();
     EnemyTracker::Tick();
     for (const auto& e : EnemyTracker::GetSnapshot()) {
         if (!e.hasHealthBar) continue;
@@ -153,6 +156,7 @@ SensorSnapshot Build(float playerX, float playerY, const Settings& settings)
         if (DistSq(e.x, e.y, playerX, playerY) > cullSq) continue;
         AddBlocker(out, Blocker::Kind::Enemy, e.id, e.x, e.y, kEnemyRadius);
     }
+    EnemyTracker::Release();
 
     std::vector<WorldProjectile> projectiles;
     ProjectileTracking::CopyActiveForDraw(projectiles);

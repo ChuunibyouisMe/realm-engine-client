@@ -197,10 +197,18 @@ HRESULT __stdcall dPresent(IDXGISwapChain* __this, UINT SyncInterval, UINT Flags
 		// #region agent log
 		SpeedHack::LogTimingProbe("pre_apply_timescale");
 		// #endregion
-		AutoAim::Tick();         // entity dict walk — uses GameState::GetWorldMgr()
 		BagLooter::Tick();       // throttled bag scan + ext-goal routing
 		BootGate::Tick();        // boot gating loop (runs EnsureAll + audit)
 		DiagBridge::Tick();      // mirror live state to %LOCALAPPDATA%\RealmEngine\diag.json
+	});
+
+	// Own safe_call on purpose. Sharing the block above meant an SEH fault in any
+	// earlier Tick aborted the whole lambda and silently skipped auto-aim — and if
+	// that fault repeated every frame, aim stopped updating for good while the
+	// shot hook kept replaying its last target. Isolated, a neighbour crashing can
+	// no longer take aiming with it.
+	Resolver::Protection::safe_call([&]() {
+		AutoAim::Tick();         // entity dict walk — uses GameState::GetWorldMgr()
 	});
 
 	DXGI_SWAP_CHAIN_DESC sd{};

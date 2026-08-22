@@ -32,6 +32,7 @@ static std::atomic<float> s_targetY{ 0.f };
 static std::atomic<bool>  s_reverseCultStaff{ true };
 static std::atomic<bool>  s_offsetColossus{ false };
 static std::atomic<bool>  s_enabled{ false };
+static std::atomic<AimHooks::ShotAimResolver> s_resolver{ nullptr };
 
 // ── Hook function-pointer types ───────────────────────────────────────────────
 using ShootWithAngleFn = void(__fastcall*)(void*, float, void*);
@@ -58,11 +59,14 @@ static float ApplyWeaponTweaks(float angle)
 static bool ShouldRedirect(void* player)
 {
     if (!s_enabled.load(std::memory_order_relaxed)) return false;
-    if (!s_hasTarget.load(std::memory_order_relaxed)) return false;
     if (!AddrOk(player)) return false;
     void* local = GameState::GetLocalPtr();
     return local && player == local;
 }
+// Deliberately not gated on s_hasTarget: that flag is written by the render
+// thread, and consulting it here would make firing depend on the render thread
+// still ticking — the coupling this change exists to remove. The resolver
+// decides, per shot, against live state; s_hasTarget is now only for the UI.
 
 // ── Detour implementations ────────────────────────────────────────────────────
 void __fastcall ShootWithAngleDetour(void* player, float angle, void* method)
@@ -76,10 +80,15 @@ void __fastcall ShootWithAngleDetour(void* player, float angle, void* method)
             py = *reinterpret_cast<float*>(lp + kOffPosY);
             ok = true;
         } __except (EXCEPTION_EXECUTE_HANDLER) {}
+
+        // Resolve against live game state now, rather than replaying whatever
+        // the render thread last cached. If the resolver declines the shot, the
+        // player's own angle goes through unmodified.
         if (ok) {
-            angle = ApplyWeaponTweaks(atan2f(
-                s_targetY.load(std::memory_order_relaxed) - py,
-                s_targetX.load(std::memory_order_relaxed) - px));
+            float tx = 0.f, ty = 0.f;
+            AimHooks::ShotAimResolver resolver = s_resolver.load(std::memory_order_relaxed);
+            if (resolver && resolver(player, tx, ty))
+                angle = ApplyWeaponTweaks(atan2f(ty - py, tx - px));
         }
     }
     g_swaOrig(player, angle, method);
@@ -147,6 +156,11 @@ void SetTarget(bool hasTarget, float x, float y)
         s_targetX.store(x, std::memory_order_relaxed);
         s_targetY.store(y, std::memory_order_relaxed);
     }
+}
+
+void SetShotAimResolver(ShotAimResolver resolver)
+{
+    s_resolver.store(resolver, std::memory_order_relaxed);
 }
 
 void SetReverseCultStaff(bool v)   { s_reverseCultStaff.store(v, std::memory_order_relaxed); }
