@@ -42,13 +42,14 @@ struct TierState {
     float   bestVx = 0.f, bestVy = 0.f;
     int32_t bestId = 0;
     int32_t bestObjType = 0;
+    float   bestCoherence = 0.f;
     void*   bestPtr = nullptr;
     bool    found = false;
 };
 
 static void TierUpdate(TierState& tier, bool useHighestHp,
                        float distSq, int32_t hp,
-                       float x, float y, float vx, float vy,
+                       float x, float y, float vx, float vy, float coherence,
                        int32_t id, int32_t objType, void* ptr)
 {
     bool better = false;
@@ -63,6 +64,7 @@ static void TierUpdate(TierState& tier, bool useHighestHp,
     tier.found = true; tier.bestDist = distSq; tier.bestHp = hp;
     tier.bestX = x; tier.bestY = y; tier.bestVx = vx; tier.bestVy = vy;
     tier.bestId = id; tier.bestObjType = objType; tier.bestPtr = ptr;
+    tier.bestCoherence = coherence;
 }
 
 } // namespace
@@ -71,7 +73,7 @@ namespace TargetSelector {
 
 void ApplyLead(float launchX, float launchY,
                float targetX, float targetY,
-               float vx, float vy,
+               float vx, float vy, float coherence, float leadStrength,
                const WeaponProfile& weapon,
                float& outX, float& outY)
 {
@@ -81,17 +83,37 @@ void ApplyLead(float launchX, float launchY,
     const float projSpeed = (weapon.avgSpeedTps > 0.1f) ? weapon.avgSpeedTps : 16.0f;
     if (projSpeed <= 0.1f) return;
 
+    // Scale the target's velocity by how coherently it's actually travelling,
+    // then by the user's lead strength. Both are applied before the intercept
+    // solve so the solver works on the velocity we intend to lead by.
+    const float coh = std::isfinite(coherence) ? (std::max)(0.f, (std::min)(1.f, coherence)) : 0.f;
+    const float k   = coh * ((std::isfinite(leadStrength) && leadStrength > 0.f) ? leadStrength : 0.f);
+    const float evx = (vx * 1000.f) * k;   // tiles/s
+    const float evy = (vy * 1000.f) * k;
+
+    const float maxTime = (weapon.lifetimeMs > 0.f) ? (weapon.lifetimeMs / 1000.f) : 1.5f;
+
+    // Solve for a real intercept rather than assuming flight time is
+    // distance / speed. That assumption under-estimates the time for a target
+    // moving away from you, which is why shots trailed enemies drifting off at
+    // a shallow angle. Falls back to the linear estimate when no positive
+    // intercept exists inside the projectile's lifetime.
+    float aimX = targetX, aimY = targetY;
+    const float t = AimMath::QuadraticIntercept(launchX, launchY, targetX, targetY,
+                                                evx, evy, projSpeed, aimX, aimY, maxTime);
+    if (t > 0.f) {
+        outX = aimX;
+        outY = aimY;
+        return;
+    }
+
     const float dx = targetX - launchX;
     const float dy = targetY - launchY;
     const float dist = sqrtf(dx * dx + dy * dy);
-
     float travelTime = dist / projSpeed;
-    const float maxTime = (weapon.lifetimeMs > 0.f) ? (weapon.lifetimeMs / 1000.f) : 1.5f;
     travelTime = (std::min)(travelTime, maxTime);
-
-    // vx/vy are tiles/ms; travelTime is seconds.
-    outX += (vx * 1000.f) * travelTime;
-    outY += (vy * 1000.f) * travelTime;
+    outX += evx * travelTime;
+    outY += evy * travelTime;
 }
 
 Result Select(const Config& cfg,
@@ -124,9 +146,11 @@ Result Select(const Config& cfg,
             r.rawY    = e.y;
             r.vx      = e.vx;
             r.vy      = e.vy;
+            r.coherence = e.coherence;
             r.ptr     = e.ptr;
 
-            ApplyLead(playerX, playerY, e.x, e.y, e.vx, e.vy, weapon, r.aimX, r.aimY);
+            ApplyLead(playerX, playerY, e.x, e.y, e.vx, e.vy, e.coherence,
+                      cfg.leadStrength, weapon, r.aimX, r.aimY);
             return r;
         }
         // Lock target gone/invalid — fall through to normal selection
@@ -178,13 +202,13 @@ Result Select(const Config& cfg,
             const bool isFallback   = IsFallbackType(e.objType);
 
             if (cfg.prioritizeBosses && isQuest && !whitelisted) {
-                TierUpdate(quest, useHighestHp, scoreDistSq, e.hp, e.x, e.y, e.vx, e.vy, e.id, e.objType, e.ptr);
+                TierUpdate(quest, useHighestHp, scoreDistSq, e.hp, e.x, e.y, e.vx, e.vy, e.coherence, e.id, e.objType, e.ptr);
             } else if (e.isInvulnerable) {
-                TierUpdate(invuln, useHighestHp, scoreDistSq, e.hp, e.x, e.y, e.vx, e.vy, e.id, e.objType, e.ptr);
+                TierUpdate(invuln, useHighestHp, scoreDistSq, e.hp, e.x, e.y, e.vx, e.vy, e.coherence, e.id, e.objType, e.ptr);
             } else if (isFallback) {
-                TierUpdate(fallback, useHighestHp, scoreDistSq, e.hp, e.x, e.y, e.vx, e.vy, e.id, e.objType, e.ptr);
+                TierUpdate(fallback, useHighestHp, scoreDistSq, e.hp, e.x, e.y, e.vx, e.vy, e.coherence, e.id, e.objType, e.ptr);
             } else {
-                TierUpdate(normal, useHighestHp, scoreDistSq, e.hp, e.x, e.y, e.vx, e.vy, e.id, e.objType, e.ptr);
+                TierUpdate(normal, useHighestHp, scoreDistSq, e.hp, e.x, e.y, e.vx, e.vy, e.coherence, e.id, e.objType, e.ptr);
             }
         }
         next_entry:;
@@ -207,6 +231,7 @@ Result Select(const Config& cfg,
     r.rawY    = winner->bestY;
     r.vx      = winner->bestVx;
     r.vy      = winner->bestVy;
+    r.coherence = winner->bestCoherence;
     r.ptr     = winner->bestPtr;
 
     // Apply lead prediction with launch point adjusted for Magnet Aim
@@ -224,7 +249,8 @@ Result Select(const Config& cfg,
     }
 
     ApplyLead(launchX, launchY, winner->bestX, winner->bestY,
-              winner->bestVx, winner->bestVy, weapon, r.aimX, r.aimY);
+              winner->bestVx, winner->bestVy, winner->bestCoherence,
+              cfg.leadStrength, weapon, r.aimX, r.aimY);
 
     return r;
 }

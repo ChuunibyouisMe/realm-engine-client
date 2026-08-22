@@ -100,6 +100,17 @@ export function register(ctx: PluginContext) {
     sendDllFeature('autoAimRangeLeadBias', Number(val) || 1);
   });
 
+  ctx.registerSetting('leadStrength', {
+    label: 'Lead strength (prediction)',
+    type: 'number',
+    value: 1,
+    min: 0,
+    max: 2,
+    step: 0.05,
+  }, (val: number) => {
+    sendDllFeature('autoAimLeadStrength', Number(val));
+  });
+
   ctx.registerSetting('projectileNoclip', {
     label: 'Projectile noclip',
     type: 'boolean',
@@ -169,6 +180,8 @@ export function register(ctx: PluginContext) {
     sendDllFeature('autoAimShootWhileStealthed', ctx.getSetting<boolean>('shootWhileStealthed') ?? true);
     sendDllFeature('autoAimMouseBoundingRange', Number(ctx.getSetting<number>('mouseBoundingRange')) || 8);
     sendDllFeature('autoAimRangeLeadBias', Number(ctx.getSetting<number>('rangeLeadBias')) || 1);
+    const lead = Number(ctx.getSetting<number>('leadStrength'));
+    sendDllFeature('autoAimLeadStrength', Number.isFinite(lead) ? lead : 1);
   }
 
   ctx.on('clientConnected', () => {

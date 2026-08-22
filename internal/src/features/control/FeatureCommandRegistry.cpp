@@ -105,6 +105,7 @@ namespace {
             FH_BOOL("autoAimShootWhileStealthed", AutoAim::SetShootWhileStealthed),
             FH_FLOAT("autoAimMouseBoundingRange", AutoAim::SetMouseBoundingRange),
             FH_FLOAT("autoAimRangeLeadBias", AutoAim::SetRangeLeadBias),
+            FH_FLOAT("autoAimLeadStrength", AutoAim::SetLeadStrength),
             FH("projectileNoclipEnabled", {
                 const bool on = f.Bool();
                 FeatureState::SetProjectileNoclipEnabled(on);

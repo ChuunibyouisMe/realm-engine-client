@@ -20,6 +20,9 @@ struct Entry {
     float   x, y;
     int32_t hp, maxHp;
     float   vx, vy;          // tiles/ms; 0 until first velocity sample
+    // 1.0 = moving in a consistent direction, ~0 = jittering in place. Lead
+    // prediction scales by this so twitching enemies aren't led off to the side.
+    float   coherence;
     bool    isInvulnerable;  // XML <Invincible/> flag or runtime condition
     bool    hasHealthBar;    // false for walls/destructibles (noHealthBar)
     bool    isQuest;         // true for quest bosses/gods

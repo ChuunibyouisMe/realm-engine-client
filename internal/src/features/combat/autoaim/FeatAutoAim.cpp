@@ -24,6 +24,7 @@ static bool  s_shootWhileStealthed = true;
 static bool  s_mouseBoundingOn     = true;
 static float s_mouseBoundingRange  = 2.f;
 static float s_rangeLeadBias       = 1.f;
+static float s_leadStrength        = 1.f;
 static bool  s_capturingKey        = false;
 
 // Phase-skip list — editable in the UI; stored as a fixed-capacity array of raw ints.
@@ -52,6 +53,7 @@ void Tick(bool /*menuOpen*/)
     s_mouseBoundingOn     = AutoAim::IsMouseBoundingEnabled();
     s_mouseBoundingRange  = AutoAim::GetMouseBoundingRange();
     s_rangeLeadBias       = AutoAim::GetRangeLeadBias();
+    s_leadStrength        = AutoAim::GetLeadStrength();
 
     if (!ProjNoclip::IsInstalled())
         ProjNoclip::Install();
@@ -216,6 +218,20 @@ void Render()
         AutoAim::SetMouseBoundingRange(s_mouseBoundingRange);
     ImGui::PopItemWidth();
     ImGui::EndDisabled();
+
+    ImGui::Spacing();
+    ImGui::TextDisabled("Lead prediction");
+    ImGui::PushItemWidth(180.f);
+    if (ImGui::SliderFloat("Lead strength##aaLeadStrength", &s_leadStrength, 0.f, 2.f, "%.2f"))
+        AutoAim::SetLeadStrength(s_leadStrength);
+    ImGui::PopItemWidth();
+    ImGui::SameLine(); ImGui::TextDisabled("(?)");
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip(
+            "How far ahead of a moving target to aim.\n"
+            "1.00 = full predicted intercept, 0.00 = aim straight at it.\n"
+            "Enemies that jitter in place are automatically led less,\n"
+            "so lower this only if genuinely moving targets are overshot.");
 
     ImGui::Spacing();
     ImGui::TextDisabled("Range lead bias");

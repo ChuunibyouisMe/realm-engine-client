@@ -52,6 +52,12 @@ float GetMouseBoundingRange();
 void  SetRangeLeadBias(float tiles);
 float GetRangeLeadBias();
 
+// Multiplier on lead prediction (0 = aim straight at the target, 1 = full
+// predicted intercept). Exposed so the lead can be tuned in-game without a
+// rebuild; combines with EnemyTracker's per-enemy coherence.
+void  SetLeadStrength(float v);
+float GetLeadStrength();
+
 // ── Weapon-specific tweaks ────────────────────────────────────────────────────
 void SetReverseCultStaff(bool on);
 bool IsReverseCultStaff();

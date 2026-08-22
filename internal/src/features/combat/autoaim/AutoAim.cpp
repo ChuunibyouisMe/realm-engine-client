@@ -35,6 +35,7 @@ static std::atomic<bool>    s_shootWhileStealthed{ true };
 static std::atomic<bool>    s_mouseBoundingEnabled{ true };
 static std::atomic<float>   s_mouseBoundingRange{ 2.f };
 static std::atomic<float>   s_rangeLeadBias{ 1.f };
+static std::atomic<float>   s_leadStrength{ 1.f };
 static std::atomic<bool>    s_reverseCultStaff{ true };
 static std::atomic<bool>    s_offsetColossus{ false };
 
@@ -67,6 +68,7 @@ static void FillConfig(TargetSelector::Config& cfg)
     cfg.prioritizeBosses     = s_prioritizeBosses.load(std::memory_order_relaxed);
     cfg.ignoreWalls          = s_ignoreWalls.load(std::memory_order_relaxed);
     cfg.rangeLeadBias        = s_rangeLeadBias.load(std::memory_order_relaxed);
+    cfg.leadStrength         = s_leadStrength.load(std::memory_order_relaxed);
     cfg.mouseBoundingEnabled = s_mouseBoundingEnabled.load(std::memory_order_relaxed);
     cfg.mouseBoundingRange   = s_mouseBoundingRange.load(std::memory_order_relaxed);
     cfg.lockedEnemyId        = s_lockedEnemyId.load(std::memory_order_relaxed);
@@ -224,6 +226,13 @@ void SetRangeLeadBias(float t)         {
 }
 float GetRangeLeadBias()               { return s_rangeLeadBias.load(std::memory_order_relaxed); }
 
+void SetLeadStrength(float v)          {
+    if (!std::isfinite(v) || v < 0.f) v = 0.f;
+    if (v > 3.f) v = 3.f;
+    s_leadStrength.store(v, std::memory_order_relaxed);
+}
+float GetLeadStrength()                { return s_leadStrength.load(std::memory_order_relaxed); }
+
 void SetReverseCultStaff(bool on)    { s_reverseCultStaff.store(on, std::memory_order_relaxed); AimHooks::SetReverseCultStaff(on); }
 bool IsReverseCultStaff()            { return s_reverseCultStaff.load(std::memory_order_relaxed); }
 
@@ -261,6 +270,7 @@ bool ResolveShotAim(void* player, float& outX, float& outY)
     }
 
     TargetSelector::ApplyLead(px, py, liveX, liveY, result.vx, result.vy,
+                              result.coherence, cfg.leadStrength,
                               WeaponCalibrator::GetProfile(), outX, outY);
 
     // Keep the UI/telemetry in step with what we actually shot at.

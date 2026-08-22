@@ -57,6 +57,12 @@ struct VelEntry {
     float     x = 0.f, y = 0.f;
     ULONGLONG t = 0;
     float     vx = 0.f, vy = 0.f;
+    // Smoothed *scalar* speed, tracked alongside the smoothed velocity vector.
+    // The ratio |vector| / scalar is how we tell travelling apart from
+    // jittering: an enemy running in a straight line has the two equal, while
+    // one twitching left and right averages to a near-zero vector while its
+    // scalar speed stays high. See kCoherence use below.
+    float     speed = 0.f;
 };
 
 static std::unordered_map<int32_t, VelEntry> s_velMap;
@@ -66,7 +72,14 @@ static constexpr float kServerTickMsMin  = 115.f;
 static constexpr float kServerTickMsMax  = 290.f;
 static constexpr float kMaxVelTilesPerMs = 0.1f;
 static constexpr float kMoVelSmooth      = 0.65f;
-static constexpr float kMaxInstTilesPerMs = 0.08f;
+// 0.035 tiles/ms = 35 tiles/s. The old 0.08 (80 tiles/s) was far above anything
+// the game actually moves at, so a single bad position sample could inject an
+// enormous velocity and throw the lead far off the target.
+static constexpr float kMaxInstTilesPerMs = 0.035f;
+// How fast the smoothed scalar speed follows new samples. Slightly slower than
+// the vector blend so a direction reversal shows up as "still moving fast, but
+// going nowhere" — which is exactly the jitter signature we want to suppress.
+static constexpr float kSpeedSmooth = 0.35f;
 
 static void UpdateVelocity(int32_t id, float ex, float ey, ULONGLONG now, void* entity)
 {
@@ -99,6 +112,8 @@ static void UpdateVelocity(int32_t id, float ex, float ey, ULONGLONG now, void* 
     if (haveMo) {
         e.vx = e.vx * (1.f - kMoVelSmooth) + moVx * kMoVelSmooth;
         e.vy = e.vy * (1.f - kMoVelSmooth) + moVy * kMoVelSmooth;
+        const float moSpeed = sqrtf(moVx * moVx + moVy * moVy);
+        e.speed = e.speed * (1.f - kSpeedSmooth) + moSpeed * kSpeedSmooth;
         e.x = ex; e.y = ey; e.t = now;
         return;
     }
@@ -120,19 +135,23 @@ static void UpdateVelocity(int32_t id, float ex, float ey, ULONGLONG now, void* 
         float blend = 0.4f;
         if (dt >= kServerTickMsMin && dt <= kServerTickMsMax)
             blend = 0.9f;
+        const float instSpeed = sqrtf(ivx * ivx + ivy * ivy);
         if (e.t != 0) {
             e.vx = e.vx * (1.f - blend) + ivx * blend;
             e.vy = e.vy * (1.f - blend) + ivy * blend;
+            e.speed = e.speed * (1.f - kSpeedSmooth) + instSpeed * kSpeedSmooth;
         } else {
-            e.vx = ivx; e.vy = ivy;
+            e.vx = ivx; e.vy = ivy; e.speed = instSpeed;
         }
         e.t = now;
     } else if (now - e.t > 150ULL) {
         // Stationary: decay velocity so lead prediction doesn't lock to stale direction
         e.vx *= 0.5f;
         e.vy *= 0.5f;
+        e.speed *= 0.5f;
         if (fabsf(e.vx) < 1e-5f) e.vx = 0.f;
         if (fabsf(e.vy) < 1e-5f) e.vy = 0.f;
+        if (e.speed < 1e-5f) e.speed = 0.f;
     }
 }
 
@@ -328,6 +347,13 @@ void Tick()
         if (it != s_velMap.end()) {
             e.vx = it->second.vx;
             e.vy = it->second.vy;
+            // Directional coherence: 1.0 = travelling in a straight line,
+            // ~0 = jittering in place. Consumers scale their lead by it.
+            const float vecMag = sqrtf(it->second.vx * it->second.vx +
+                                       it->second.vy * it->second.vy);
+            e.coherence = (it->second.speed > 1e-6f)
+                ? (std::min)(1.f, vecMag / it->second.speed)
+                : 1.f;
         }
         s_snapshot.push_back(e);
     }

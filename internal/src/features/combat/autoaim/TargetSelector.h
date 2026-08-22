@@ -18,6 +18,7 @@ struct Config {
     bool           prioritizeBosses     = true;
     bool           ignoreWalls          = true;  // skip noHealthBar entities
     float          rangeLeadBias        = 1.0f;  // extra tiles past weapon range
+    float          leadStrength         = 1.0f;  // user multiplier on lead prediction
     bool           mouseBoundingEnabled = false;
     float          mouseBoundingRange   = 8.0f;
     int32_t        lockedEnemyId        = -1;    // used when mode == Locked
@@ -38,14 +39,20 @@ struct Result {
     float   rawY    = 0.f;
     float   vx      = 0.f;   // tiles/ms
     float   vy      = 0.f;
+    float   coherence = 0.f; // 0..1 directional consistency, see ApplyLead
     void*   ptr     = nullptr;
 };
 
 // Lead-prediction shared by the selector and the fire-time path so both use
 // identical math. vx/vy are tiles/ms; the result is a world-space aim point.
+//
+// `coherence` (0..1) comes from EnemyTracker and reports how consistently the
+// target is travelling: jittering enemies approach 0 and are led far less,
+// which stops the aim swinging to either side of an enemy twitching in place.
+// `leadStrength` is the user's multiplier on top.
 void ApplyLead(float launchX, float launchY,
                float targetX, float targetY,
-               float vx, float vy,
+               float vx, float vy, float coherence, float leadStrength,
                const WeaponProfile& weapon,
                float& outX, float& outY);
 

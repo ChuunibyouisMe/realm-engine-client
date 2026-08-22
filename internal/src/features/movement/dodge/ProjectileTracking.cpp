@@ -6,6 +6,7 @@
 #include "../../projectiles/ProjectileStore.h"
 #include "../../projectiles/ProjectileTrajectory.h"
 #include "AutoAim.h"
+#include "features/combat/enemytracker/EnemyTracker.h"
 #include "FeatMagnetAim.h"
 #include "gui/tabs/WorldTAB.h"
 #include "helpers.h"
@@ -207,7 +208,14 @@ void* __fastcall SpawnProjectileDetour(
 
     float spawnX = startX;
     float spawnY = startY;
-    const int32_t dk = g_LocalDictKey.load(std::memory_order_relaxed);
+    // g_LocalDictKey is only ever written by WorldTAB::DoRefresh(), which runs
+    // when the World tab is open (or via BagLooter / TestTAB). During normal
+    // play with the menu closed it stays 0, so isLocalShot was false and both
+    // magnet aim and the muzzle offset silently did nothing. EnemyTracker
+    // captures the same id every snapshot — including on the shot path — so use
+    // it as the fallback, exactly as AutoAim::OnLocalPlayerProjectileSpawn does.
+    int32_t dk = g_LocalDictKey.load(std::memory_order_relaxed);
+    if (dk == 0) dk = EnemyTracker::GetLocalPlayerObjectId();
     const bool isLocalShot = dk != 0 && (attackerObjId == dk || static_cast<int32_t>(ownerObjId) == dk);
     if (isLocalShot && CombatTAB::FeatMagnetAim::IsEnabled()) {
         const float magnetTiles = CombatTAB::FeatMagnetAim::GetVisualOffsetTiles();
