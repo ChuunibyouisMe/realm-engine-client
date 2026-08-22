@@ -50,8 +50,15 @@ static std::atomic<bool>  s_enabled{ false };
 static std::atomic<float> s_horizonMs{ 1400.f };
 static std::atomic<float> s_opacity{ 0.55f };
 static std::atomic<bool>  s_showDanger{ true };
+static std::atomic<float> s_comfortTiles{ 0.7f };
+static std::atomic<float> s_maxReachTiles{ 9.f };
+static std::atomic<float> s_effReachTiles{ 0.f };
 
 static float     s_field[kCellCount];
+// Distance, in tiles, from each safe cell to the nearest unsafe one. This is
+// what separates a pocket you can actually steer into from a hitbox-width slot
+// that is only theoretically survivable.
+static float     s_clearance[kCellCount];
 static float     s_originX = 0.f, s_originY = 0.f;  // world pos of cell (0,0) corner
 static bool      s_haveField = false;
 static ULONGLONG s_lastBuildMs = 0;
@@ -206,9 +213,52 @@ static void Rebuild(float px, float py)
         if (stamped) ++threats;
     }
 
+    // ── Clearance ────────────────────────────────────────────────────────────
+    // Two-pass chamfer distance transform: unsafe cells are 0, safe cells take
+    // the distance to the nearest unsafe one. ~2 sweeps over 6400 cells, which
+    // is nothing next to the stamping above, and it is what lets the overlay
+    // hide micro-gaps that no human could thread.
+    constexpr float kOrtho = 1.f;
+    constexpr float kDiag  = 1.41421356f;
+    constexpr float kFar   = 1.0e9f;
+
+    for (int i = 0; i < kCellCount; ++i)
+        s_clearance[i] = (s_field[i] == kSafe) ? kFar : 0.f;
+
+    for (int y = 0; y < kGridDim; ++y) {
+        for (int x = 0; x < kGridDim; ++x) {
+            float d = s_clearance[y * kGridDim + x];
+            if (d == 0.f) continue;
+            if (x > 0)                 d = (std::min)(d, s_clearance[y * kGridDim + (x - 1)] + kOrtho);
+            if (y > 0)                 d = (std::min)(d, s_clearance[(y - 1) * kGridDim + x] + kOrtho);
+            if (x > 0 && y > 0)        d = (std::min)(d, s_clearance[(y - 1) * kGridDim + (x - 1)] + kDiag);
+            if (x + 1 < kGridDim && y > 0)
+                                       d = (std::min)(d, s_clearance[(y - 1) * kGridDim + (x + 1)] + kDiag);
+            s_clearance[y * kGridDim + x] = d;
+        }
+    }
+    for (int y = kGridDim - 1; y >= 0; --y) {
+        for (int x = kGridDim - 1; x >= 0; --x) {
+            float d = s_clearance[y * kGridDim + x];
+            if (d == 0.f) continue;
+            if (x + 1 < kGridDim)      d = (std::min)(d, s_clearance[y * kGridDim + (x + 1)] + kOrtho);
+            if (y + 1 < kGridDim)      d = (std::min)(d, s_clearance[(y + 1) * kGridDim + x] + kOrtho);
+            if (x + 1 < kGridDim && y + 1 < kGridDim)
+                                       d = (std::min)(d, s_clearance[(y + 1) * kGridDim + (x + 1)] + kDiag);
+            if (x > 0 && y + 1 < kGridDim)
+                                       d = (std::min)(d, s_clearance[(y + 1) * kGridDim + (x - 1)] + kDiag);
+            s_clearance[y * kGridDim + x] = d;
+        }
+    }
+    // Cell units -> tiles. Cells at the window edge report a large clearance
+    // they have not earned, but those are culled by reach long before drawing.
+    for (int i = 0; i < kCellCount; ++i)
+        if (s_clearance[i] < kFar) s_clearance[i] *= kCellTiles;
+
+    const float comfort = s_comfortTiles.load(std::memory_order_relaxed);
     int safeCells = 0;
     for (int i = 0; i < kCellCount; ++i)
-        if (s_field[i] == kSafe) ++safeCells;
+        if (s_field[i] == kSafe && s_clearance[i] >= comfort) ++safeCells;
 
     LARGE_INTEGER t1, freq;
     QueryPerformanceCounter(&t1);
@@ -246,6 +296,23 @@ float GetOpacity() { return s_opacity.load(std::memory_order_relaxed); }
 
 void SetShowDanger(bool on) { s_showDanger.store(on, std::memory_order_relaxed); }
 bool IsShowDanger()         { return s_showDanger.load(std::memory_order_relaxed); }
+
+void SetComfortTiles(float t) {
+    if (!std::isfinite(t)) return;
+    if (t < 0.f) t = 0.f;
+    if (t > 3.f) t = 3.f;
+    s_comfortTiles.store(t, std::memory_order_relaxed);
+}
+float GetComfortTiles() { return s_comfortTiles.load(std::memory_order_relaxed); }
+
+void SetMaxReachTiles(float t) {
+    if (!std::isfinite(t)) return;
+    if (t < 2.f) t = 2.f;
+    if (t > kHalfExtentTiles) t = kHalfExtentTiles;
+    s_maxReachTiles.store(t, std::memory_order_relaxed);
+}
+float GetMaxReachTiles()       { return s_maxReachTiles.load(std::memory_order_relaxed); }
+float GetEffectiveReachTiles() { return s_effReachTiles.load(std::memory_order_relaxed); }
 
 int   GetThreatCount()  { return s_threatCount.load(std::memory_order_relaxed); }
 float GetLastBuildUs()  { return s_lastBuildUs.load(std::memory_order_relaxed); }
@@ -286,7 +353,30 @@ void Render()
     // can meaningfully react to.
     constexpr int kStep = static_cast<int>(1.f / kCellTiles);   // 2
     const float quadTiles = kCellTiles * static_cast<float>(kStep);
-    const float cullR = kHalfExtentTiles + 1.f;
+    const float comfort = s_comfortTiles.load(std::memory_order_relaxed);
+
+    // Reach: safe ground you cannot get to inside the look-ahead window is not
+    // actionable, so bound the drawing by how far you could actually travel,
+    // capped by the user's preference. Falls back to the cap if speed is
+    // unreadable.
+    int32_t hp = 0, maxHp = 0;
+    float spd = 0.f, tilesPerSec = 0.f;
+    TestTAB::ReadDodgePlayerStats(hp, maxHp, spd, tilesPerSec);
+    const float cap = s_maxReachTiles.load(std::memory_order_relaxed);
+    float reach = cap;
+    if (std::isfinite(tilesPerSec) && tilesPerSec > 0.1f)
+        reach = (std::min)(cap, tilesPerSec * (horizon / 1000.f));
+    if (reach < 2.f) reach = 2.f;
+    s_effReachTiles.store(reach, std::memory_order_relaxed);
+    const float cullR = reach;
+
+    // Player position drives the reach test — the camera can be off-centre.
+    float pxNow = camX, pyNow = camY;
+    {
+        void* lp = GameState::GetLocalPtr();
+        float tx = 0.f, ty = 0.f;
+        if (ReadPlayerPos(lp, tx, ty)) { pxNow = tx; pyNow = ty; }
+    }
 
     // Camera basis, hoisted out of the loop, with the world->screen scale folded
     // in. Every tile is the same rotated square, so its corner offsets in screen
@@ -302,23 +392,33 @@ void Render()
     for (int cy0 = 0; cy0 + kStep <= kGridDim; cy0 += kStep) {
         for (int cx0 = 0; cx0 + kStep <= kGridDim; cx0 += kStep) {
             float worst = kSafe;
+            float minClear = FLT_MAX;
             for (int dy = 0; dy < kStep; ++dy)
                 for (int dx = 0; dx < kStep; ++dx) {
-                    const float v = s_field[(cy0 + dy) * kGridDim + (cx0 + dx)];
+                    const int idx = (cy0 + dy) * kGridDim + (cx0 + dx);
+                    const float v = s_field[idx];
                     if (v < worst) worst = v;
+                    if (s_clearance[idx] < minClear) minClear = s_clearance[idx];
                 }
 
             const float wx = s_originX + (static_cast<float>(cx0) + kStep * 0.5f) * kCellTiles;
             const float wy = s_originY + (static_cast<float>(cy0) + kStep * 0.5f) * kCellTiles;
 
-            // Round window — the square grid corners are far off screen anyway.
-            const float ddx = wx - camX, ddy = wy - camY;
+            // Only ground within reach of the player is actionable.
+            const float ddx = wx - pxNow, ddy = wy - pyNow;
             if (ddx * ddx + ddy * ddy > cullR * cullR) continue;
 
             ImU32 col;
             if (worst == kSafe) {
-                // Safe ground: calm green wash.
-                const int a = static_cast<int>(52.f * opacity);
+                // Only pockets with room to actually steer into. A slot exactly
+                // the width of the hitbox is survivable on paper and useless in
+                // practice, and drawing those was the bulk of the noise.
+                if (minClear < comfort) continue;
+                // Roomier pockets read brighter, so the eye lands on the safest
+                // ground rather than the nearest speck of green.
+                const float roomy = (comfort > 0.01f)
+                    ? (std::min)(1.f, (minClear - comfort) / (comfort * 2.f)) : 1.f;
+                const int a = static_cast<int>((34.f + 40.f * roomy) * opacity);
                 if (a <= 3) continue;
                 col = IM_COL32(70, 220, 120, a);
             } else {

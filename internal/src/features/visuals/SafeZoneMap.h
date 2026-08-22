@@ -37,6 +37,23 @@ float GetOpacity();
 void SetShowDanger(bool on);
 bool IsShowDanger();
 
+// Minimum clearance, in tiles, before a safe pocket is worth showing. The field
+// already accounts for the player's hitbox, so a cell marked safe is one you
+// would technically fit in — but a gap only as wide as your hitbox is not a gap
+// a human can actually steer into. This is the margin on top: raise it to be
+// shown only roomy pockets, lower it if you want to attempt tighter ones.
+void  SetComfortTiles(float tiles);
+float GetComfortTiles();
+
+// Maximum distance from the player to display, in tiles. Also clamped by how
+// far you could actually travel within the look-ahead window at your current
+// speed — safe ground you cannot reach in time is not useful information.
+void  SetMaxReachTiles(float tiles);
+float GetMaxReachTiles();
+
+// Effective reach used by the last render (min of the cap and speed x horizon).
+float GetEffectiveReachTiles();
+
 // Rebuild the field (self-throttled) — call once per frame from dPresent.
 void Tick();
 

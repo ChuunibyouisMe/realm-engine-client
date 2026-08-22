@@ -138,13 +138,37 @@ void Render()
         if (ImGui::SliderFloat("Look ahead (ms)##szmHorizon", &horizon, 300.f, 4000.f, "%.0f"))
             SafeZoneMap::SetHorizonMs(horizon);
 
+        float comfort = SafeZoneMap::GetComfortTiles();
+        if (ImGui::SliderFloat("Comfort margin (tiles)##szmComfort", &comfort, 0.f, 3.f, "%.2f"))
+            SafeZoneMap::SetComfortTiles(comfort);
+        ImGui::PopItemWidth();
+        ImGui::SameLine(); ImGui::TextDisabled("(?)");
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip(
+                "How much room a safe pocket needs before it is shown.\n"
+                "Your hitbox is already accounted for, so 0 shows every gap you\n"
+                "would technically fit in — including ones no human could steer\n"
+                "into. Raise it to be shown only pockets you can realistically take.");
+
+        ImGui::PushItemWidth(180.f);
+        float reach = SafeZoneMap::GetMaxReachTiles();
+        if (ImGui::SliderFloat("Max reach (tiles)##szmReach", &reach, 2.f, 20.f, "%.0f"))
+            SafeZoneMap::SetMaxReachTiles(reach);
+
         float opacity = SafeZoneMap::GetOpacity();
         if (ImGui::SliderFloat("Opacity##szmOpacity", &opacity, 0.f, 1.f, "%.2f"))
             SafeZoneMap::SetOpacity(opacity);
         ImGui::PopItemWidth();
+        ImGui::SameLine(); ImGui::TextDisabled("(?)");
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip(
+                "Ground further than this is not drawn. Also clamped by how far\n"
+                "you could actually run inside the look-ahead window, so safe\n"
+                "ground you could never reach in time stays hidden.");
 
         if (SafeZoneMap::IsEnabled()) {
-            ImGui::TextDisabled("shots folded in: %d   safe cells: %d   rebuild: %.0f us",
+            ImGui::TextDisabled("effective reach: %.1f tiles", static_cast<double>(SafeZoneMap::GetEffectiveReachTiles()));
+            ImGui::TextDisabled("shots folded in: %d   comfortable cells: %d   rebuild: %.0f us",
                                 SafeZoneMap::GetThreatCount(),
                                 SafeZoneMap::GetSafeCellCount(),
                                 static_cast<double>(SafeZoneMap::GetLastBuildUs()));
