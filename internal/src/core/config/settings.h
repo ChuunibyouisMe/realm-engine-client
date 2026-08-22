@@ -6,7 +6,7 @@ class Settings {
 public:
  KeyBinds::Config KeyBinds = {
  VK_INSERT, // toggle menu
- 0          // toggle auto aim (unbound by default)
+ 0x30       // toggle auto aim — the '0' key (KeyBinds::KeyMap entry "0")
  };
 
  bool ImGuiInitialized = false;

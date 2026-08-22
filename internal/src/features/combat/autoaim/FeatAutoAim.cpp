@@ -18,7 +18,7 @@ static bool  s_noclipEnabled       = false;
 static bool  s_shootInvulnerable   = false;
 static bool  s_prioritizeBosses    = false;
 static bool  s_ignoreWalls         = true;
-static bool  s_reverseCultStaff    = true;
+static bool  s_reverseCultStaff    = false;
 static bool  s_offsetColossusSword = false;
 static bool  s_shootWhileStealthed = true;
 static bool  s_mouseBoundingOn     = true;
@@ -33,9 +33,24 @@ static int32_t s_skipTypes[kMaxSkipTypes] = {};
 static int     s_skipCount = 0;
 static char    s_skipInputBuf[32] = {};
 
+// KeyBinds::IsKeyPressed polls GetAsyncKeyState, which is process-wide: it fires
+// whether or not the game has focus. That was tolerable while the default bind
+// was VK_INSERT and unbound, but the default is now a plain character key, so
+// without this a '0' typed into the dashboard or a browser would toggle auto-aim.
+// The plugin-hotkey path in FeatureRuntime gates the same way.
+static bool GameWindowFocused()
+{
+    const HWND fg = GetForegroundWindow();
+    if (!fg) return false;
+    DWORD pid = 0;
+    GetWindowThreadProcessId(fg, &pid);
+    return pid == GetCurrentProcessId();
+}
+
 void Tick(bool /*menuOpen*/)
 {
-    if (settings.KeyBinds.Toggle_AutoAim != 0 && KeyBinds::IsKeyPressed(settings.KeyBinds.Toggle_AutoAim) && !s_capturingKey) {
+    if (settings.KeyBinds.Toggle_AutoAim != 0 && GameWindowFocused() &&
+        KeyBinds::IsKeyPressed(settings.KeyBinds.Toggle_AutoAim) && !s_capturingKey) {
         s_aimEnabled = !FeatureState::GetAutoAimEnabled();
         FeatureState::SetAutoAimEnabled(s_aimEnabled);
     } else {

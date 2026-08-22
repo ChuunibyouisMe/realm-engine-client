@@ -29,7 +29,7 @@ static constexpr int32_t kProjIdColossusSlash = 0xB106; // Sword of the Colossus
 static std::atomic<bool>  s_hasTarget{ false };
 static std::atomic<float> s_targetX{ 0.f };
 static std::atomic<float> s_targetY{ 0.f };
-static std::atomic<bool>  s_reverseCultStaff{ true };
+static std::atomic<bool>  s_reverseCultStaff{ false };
 static std::atomic<bool>  s_offsetColossus{ false };
 static std::atomic<bool>  s_enabled{ false };
 static std::atomic<AimHooks::ShotAimResolver> s_resolver{ nullptr };

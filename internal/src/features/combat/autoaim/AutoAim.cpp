@@ -36,7 +36,7 @@ static std::atomic<bool>    s_mouseBoundingEnabled{ true };
 static std::atomic<float>   s_mouseBoundingRange{ 2.f };
 static std::atomic<float>   s_rangeLeadBias{ 1.f };
 static std::atomic<float>   s_leadStrength{ 1.f };
-static std::atomic<bool>    s_reverseCultStaff{ true };
+static std::atomic<bool>    s_reverseCultStaff{ false };
 static std::atomic<bool>    s_offsetColossus{ false };
 
 static std::atomic<bool>    s_hasTarget{ false };
