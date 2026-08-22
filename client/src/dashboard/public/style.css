@@ -5370,6 +5370,51 @@ body.theme-light .nearby-row.selected td {
   transform: translateX(16px);
 }
 
+/* The plugin switches are 36x20 — comfortable with a mouse, fiddly with a
+   thumb on a Steam Deck screen (the dashboard is often viewed in an in-game
+   browser). Grow the touch target to ~44px with a transparent overlay so the
+   control stays visually identical and nothing reflows. The cards and sidebar
+   rows are ≥36px tall, so the expanded areas don't overlap each other. */
+.plugin-card-toggle,
+.plugin-sidebar-item .toggle-switch-sm {
+  position: relative;
+}
+
+.plugin-card-toggle::after,
+.plugin-sidebar-item .toggle-switch-sm::after {
+  content: '';
+  position: absolute;
+  inset: -12px;
+  border-radius: 999px;
+}
+
+@media (pointer: coarse) {
+  /* Touch as the primary input: make the switch itself bigger too. */
+  .plugin-card-toggle.toggle-switch-sm,
+  .plugin-sidebar-item .toggle-switch-sm {
+    width: 46px;
+    height: 26px;
+    flex: 0 0 auto;
+  }
+
+  .plugin-card-toggle.toggle-switch-sm .toggle-slider:before,
+  .plugin-sidebar-item .toggle-switch-sm .toggle-slider:before {
+    width: 18px;
+    height: 18px;
+    left: 4px;
+    bottom: 4px;
+  }
+
+  .plugin-card-toggle.toggle-switch-sm input:checked + .toggle-slider:before,
+  .plugin-sidebar-item .toggle-switch-sm input:checked + .toggle-slider:before {
+    transform: translateX(20px);
+  }
+
+  .plugin-sidebar-item {
+    padding: 12px 10px;
+  }
+}
+
 .plugin-sidebar-empty {
   padding: 12px 8px;
   font-size: 11px;
